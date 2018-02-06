@@ -120,6 +120,7 @@ def compile_foreign_key(line, context, attributes, primary_key, attr_sql, foreig
         attributes.append(new_attr)
         if primary_key is not None:
             primary_key.append(new_attr)
+            null_option = 'NOT NULL'
         elif 'nullable' in options:
             null_option = 'default NULL'
         else:
