@@ -85,12 +85,10 @@ def compile_foreign_key(line, context, attributes, primary_key, attr_sql, foreig
     except StopIteration:
         pass   # the normal outcome
 
-    print(line)
     # Match the primary attributes of the referenced table to local attributes
     new_attrs = list(result.new_attrs)
     ref_attrs = list(result.ref_attrs)
     options = list(result.options)
-    print(options)
 
     # special case, the renamed attribute is implicit
     if new_attrs and not ref_attrs:
