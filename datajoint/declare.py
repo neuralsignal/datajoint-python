@@ -63,7 +63,7 @@ def compile_foreign_key(line, context, attributes, primary_key, attr_sql, foreig
     :param attr_sql: a list of sql statements defining attributes -- to be updated by this function.
     :param foreign_key_sql: a list of sql statements specifying foreign key constraints -- to be updated by this function.
     """
-    # Parse and validate 
+    # Parse and validate
     from .base_relation import BaseRelation
     try:
         result = foreign_key_parser.parseString(line)
@@ -88,6 +88,7 @@ def compile_foreign_key(line, context, attributes, primary_key, attr_sql, foreig
     # Match the primary attributes of the referenced table to local attributes
     new_attrs = list(result.new_attrs)
     ref_attrs = list(result.ref_attrs)
+    options = list(result.options)
 
     # special case, the renamed attribute is implicit
     if new_attrs and not ref_attrs:
@@ -119,7 +120,11 @@ def compile_foreign_key(line, context, attributes, primary_key, attr_sql, foreig
         attributes.append(new_attr)
         if primary_key is not None:
             primary_key.append(new_attr)
-        attr_sql.append(ref.heading[ref_attr].sql.replace(ref_attr, new_attr, 1))
+        elif 'nullable' in options:
+            null_option = 'default NULL'
+        else:
+            null_option = 'NOT NULL'
+        attr_sql.append(ref.heading[ref_attr].sql.replace(ref_attr, new_attr, 1).replace('NOT NULL', null_option))
 
     # declare the foreign key
     foreign_key_sql.append(
