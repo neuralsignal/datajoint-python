@@ -68,6 +68,20 @@ class Heading:
         return [k for k, v in self.attributes.items() if not v.in_key]
 
     @property
+    def nullables(self):
+        return [k for k, v in self.attributes.items() if v.nullable]
+
+    @property
+    def non_nullables(self):
+        return [k for k, v in self.attributes.items() if not v.nullable]
+
+    @property
+    def defaults(self):
+        return {
+            k : v.default for k, v in self.attributes.items()
+        }
+
+    @property
     def blobs(self):
         return [k for k, v in self.attributes.items() if v.is_blob]
 
