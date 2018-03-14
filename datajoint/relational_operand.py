@@ -6,6 +6,7 @@ import numpy as np
 import re
 import datetime
 import decimal
+import pandas as pd
 from . import DataJointError, config
 from .fetch import Fetch, Fetch1
 
@@ -332,6 +333,41 @@ class RelationalOperand:
     @property
     def fetch(self):
         return Fetch(self)
+
+    def uberfetch1(self, *args, **kwargs):
+        entry = self.fetch1(*args, **kwargs)
+        for json_field in self.heading.json_fields:
+            if entry[json_field] is None:
+                continue
+            entry[json_field] = eval(entry[json_field])
+            if set(entry[json_field]) & set(entry):
+                raise NameError('conflicting columns with json')
+            entry.update(entry[json_field])
+        return entry
+
+    def uberfetch(self, *args, **kwargs):
+        table = pd.DataFrame(self.fetch(*arg, **kwargs))
+        for json_field in self.heading.json_fields:
+            table[json_field] = table[json_field].apply(eval)
+            json_table = table[json_field].apply(pd.Series)
+            if set(table.columns) & set(json_table.columns):
+                raise NameError('conflicting columns with json')
+            table = pd.concat(
+                (table, json_table),
+            axis=1)
+        return table
+
+    def json_restrict(self, key):
+        table = self.proj(*self.heading.json_fields).uberfetch()
+        if isinstance(key, dict):
+            for column, value in key.items():
+                table = table[table[column] == value]
+        elif isinstance(key, list):
+            raise NotImplementedError('json restrict with key as list type')
+        else:
+            raise TypeError('key must be dict or list')
+        restriction = table[self.primary_key].to_dict('records')
+        return self & restriction
 
     def attributes_in_restriction(self):
         """

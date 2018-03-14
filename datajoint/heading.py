@@ -76,6 +76,11 @@ class Heading:
         return [k for k, v in self.attributes.items() if not v.nullable]
 
     @property
+    def json_fields(self):
+        return [k for k, v in self.attributes.items()
+                if (v.type == 'varchar(15000)') or ('json' in v.name)]
+
+    @property
     def defaults(self):
         return {
             k : v.default for k, v in self.attributes.items()
