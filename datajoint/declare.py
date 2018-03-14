@@ -184,6 +184,59 @@ def declare(full_table_name, definition, context):
                        index_sql) +
             '\n) ENGINE=InnoDB, CHARACTER SET latin1, COMMENT "%s"' % table_comment), uses_external
 
+def alter_table(full_table_name, definition, heading, context):
+    """alter table columns
+    """
+    # split definition into lines
+    definition = re.split(r'\s*\n\s*', definition.strip())
+    # check for optional table comment
+    table_comment = definition.pop(0)[1:].strip() if definition[0].startswith('#') else ''
+    in_key = True  # parse primary keys
+    primary_key = []
+    attributes = []
+    attribute_sql = []
+    foreign_key_sql = []
+    index_sql = []
+    uses_external = False
+
+    for line in definition:
+        if line.startswith('#'):  # additional comments are ignored
+            pass
+        elif line.startswith('---') or line.startswith('___'):
+            in_key = False  # start parsing dependent attributes
+        elif in_key:
+            continue
+        elif is_foreign_key(line):
+            compile_foreign_key(line, context, attributes,
+                                primary_key if in_key else None,
+                                attribute_sql, foreign_key_sql)
+        elif re.match(r'^(unique\s+)?index[^:]*$', line, re.I):   # index
+            #continue
+            index_sql.append(line)  # the SQL syntax is identical to DataJoint's
+        else:
+            name, sql, is_external = compile_attribute(line, in_key, foreign_key_sql)
+            if name in heading:
+                continue
+            uses_external = uses_external or is_external
+            if in_key and name not in primary_key:
+                primary_key.append(name)
+            if name not in attributes:
+                attributes.append(name)
+                attribute_sql.append(sql)
+    #
+    for name in heading:
+        name = '(`{}`)'.format(name)
+        foreign_key_sql = [
+                sql for sql in foreign_key_sql
+                if name not in sql
+                ]
+
+    if not attribute_sql:
+        raise AttributeError('no new attributes.')
+    return ('ALTER TABLE %s ADD (' % full_table_name +
+            ', '.join(attribute_sql + foreign_key_sql + index_sql) +
+            ');'), uses_external
+
 
 def compile_attribute(line, in_key, foreign_key_sql):
     """

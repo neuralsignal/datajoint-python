@@ -8,7 +8,7 @@ import logging
 import warnings
 from pymysql import OperationalError, InternalError, IntegrityError
 from . import config, DataJointError
-from .declare import declare
+from .declare import declare, alter_table
 from .relational_operand import RelationalOperand
 from .blob import pack
 from .utils import user_choice
@@ -68,6 +68,16 @@ class BaseRelation(RelationalOperand):
                 raise
         else:
             self._log('Declared ' + self.full_table_name)
+
+    def add_columns(self):
+        """
+        """
+        sql, uses_external = alter_table(self.full_table_name, self.definition, self.heading, self._context)
+        if uses_external:
+            external_table = self.connection.schemas[self.database].external_table
+            sql = sql.format(external_table=external_table.full_table_name)
+        self.connection.query(sql)
+
 
     @property
     def from_clause(self):

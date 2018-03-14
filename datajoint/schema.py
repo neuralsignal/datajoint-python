@@ -2,7 +2,6 @@ import warnings
 import pymysql
 import inspect
 import logging
-import inspect
 import re
 from . import conn, DataJointError, config
 from .erd import ERD
@@ -172,7 +171,6 @@ class Schema:
                 raise DataJointError('Table not declared %s' % instance.table_name)
             else:
                 instance.declare()
-
         # fill values in Lookup tables from their contents property
         if instance.is_declared and hasattr(instance, 'contents') and isinstance(instance, Lookup):
             contents = list(instance.contents)
@@ -183,6 +181,11 @@ class Schema:
                             table=instance.__class__.__name__))
                 else:
                     instance.insert(contents, skip_duplicates=True)
+        #TODO add columns to declared table
+        try:
+            instance.add_columns()
+        except AttributeError:
+            pass
 
     def __call__(self, cls):
         """
