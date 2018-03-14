@@ -346,9 +346,14 @@ class RelationalOperand:
         return entry
 
     def uberfetch(self, *args, **kwargs):
-        table = pd.DataFrame(self.fetch(*arg, **kwargs))
+        def evaluate(x):
+            if pd.isnull(x):
+                return None
+            else:
+                return eval(x)
+        table = pd.DataFrame(self.fetch(*args, **kwargs))
         for json_field in self.heading.json_fields:
-            table[json_field] = table[json_field].apply(eval)
+            table[json_field] = table[json_field].apply(evaluate)
             json_table = table[json_field].apply(pd.Series)
             if set(table.columns) & set(json_table.columns):
                 raise NameError('conflicting columns with json')
