@@ -182,10 +182,10 @@ class Schema:
                 else:
                     instance.insert(contents, skip_duplicates=True)
         #TODO add columns to declared table
-        try:
-            instance.add_columns()
-        except AttributeError:
-            pass
+        #try:
+        #    instance.add_columns()
+        #except AttributeError:
+        #    pass
 
     def __call__(self, cls):
         """

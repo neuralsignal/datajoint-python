@@ -225,7 +225,11 @@ def alter_table(full_table_name, definition, heading, context):
                 attribute_sql.append(sql)
     #
     for name in heading:
-        name = '(`{}`)'.format(name)
+        name = '`{}`'.format(name)
+        attribute_sql = [
+                sql for sql in attribute_sql
+                if name not in sql
+                ]
         foreign_key_sql = [
                 sql for sql in foreign_key_sql
                 if name not in sql
