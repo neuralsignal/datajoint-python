@@ -536,6 +536,11 @@ class BaseRelation(RelationalOperand):
             where_clause=self.where_clause)
         self.connection.query(command, args=(value, ) if value is not None else ())
 
+    def update(self, update_dict):
+        """update using a dictionary
+        """
+        for attr, value in update_dict.items():
+            self._update(attr, value)
 
 def lookup_class_name(name, context, depth=3):
     """
