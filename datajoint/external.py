@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from tqdm import tqdm
 from . import config, DataJointError
 from .hash import long_hash
