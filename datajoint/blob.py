@@ -248,7 +248,10 @@ def pack_array(array):
     if is_complex:
         array, imaginary = np.real(array), np.imag(array)
 
-    type_number = rev_class_id[array.dtype]
+    if array.dtype in rev_class_id:
+        type_number = rev_class_id[array.dtype]
+    else:
+        raise DataJointError("Unsupported dtype: %s" % array.dtype)
 
     if dtype_list[type_number] is None:
         raise DataJointError("Type %s is ambiguous or unknown" % array.dtype)
@@ -298,4 +301,3 @@ def unpack(blob, **kwargs):
         return None
 
     return BlobReader(blob, **kwargs).unpack()
-

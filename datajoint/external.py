@@ -46,17 +46,32 @@ class ExternalTable(BaseRelation):
         put an object in external store
         """
         spec = self._get_store_spec(store)
-        blob = pack(obj)
-        blob_hash = long_hash(blob) + store[len('external-'):]
+        try:
+            blob = pack(obj)
+            blob_hash = long_hash(blob) + store[len('external-'):]
+        except DataJointError as e:
+            if store[len('external-'):]:
+                raise e
+            if isinstance(obj, np.ndarray):
+                blob = obj.tostring()
+                blob_hash = long_hash(blob) + '.npy'
+            else:
+                raise e
         if spec['protocol'] == 'file':
             folder = os.path.join(spec['location'], self.database)
             full_path = os.path.join(folder, blob_hash)
             if not os.path.isfile(full_path):
-                try:
-                    safe_write(full_path, blob)
-                except FileNotFoundError:
-                    os.makedirs(folder)
-                    safe_write(full_path, blob)
+                if full_path.endswith('.npy'):
+                    try:
+                        np.save(full_path, obj, allow_pickle=False)
+                    except ValueError:
+                        np.save(full_path, obj, allow_pickle=True)
+                else:
+                    try:
+                        safe_write(full_path, blob)
+                    except FileNotFoundError:
+                        os.makedirs(folder)
+                        safe_write(full_path, blob)
         elif spec['protocol'] == 's3':
             s3.Folder(database=self.database, **spec).put(blob_hash, blob)
         else:
@@ -80,15 +95,25 @@ class ExternalTable(BaseRelation):
         if blob_hash is None:
             return None
         store = blob_hash[STORE_HASH_LENGTH:]
-        store = 'external' + ('-' if store else '') + store
+        if store == '.npy':
+            np_store = True
+            store = 'external'
+        else:
+            np_store = False
+            store = 'external' + ('-' if store else '') + store
 
         cache_folder = config.get('cache', None)
 
         blob = None
-        if cache_folder:
+        if cache_folder and not np_store:
             try:
                 with open(os.path.join(cache_folder, blob_hash), 'rb') as f:
                     blob = f.read()
+            except FileNotFoundError:
+                pass
+        elif cache_folder and np_store:
+            try:
+                return np.load(blob_hash)
             except FileNotFoundError:
                 pass
 
@@ -96,6 +121,8 @@ class ExternalTable(BaseRelation):
             spec = self._get_store_spec(store)
             if spec['protocol'] == 'file':
                 full_path = os.path.join(spec['location'], self.database, blob_hash)
+                if np_store:
+                    return np.load(full_path)
                 try:
                     with open(full_path, 'rb') as f:
                         blob = f.read()
