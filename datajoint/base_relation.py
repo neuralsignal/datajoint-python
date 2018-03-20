@@ -517,7 +517,9 @@ class BaseRelation(RelationalOperand):
 
         attr = self.heading[attrname]
 
-        if attr.is_blob:
+        if attr.is_external:
+            placeholder, value = '%s', self.external_table.put(attr.type, value)
+        elif attr.is_blob:
             value = pack(value)
             placeholder = '%s'
         elif attr.numeric:
