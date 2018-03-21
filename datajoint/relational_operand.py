@@ -344,6 +344,10 @@ class RelationalOperand:
                 if set(entry[json_field]) & set(entry):
                     raise NameError('conflicting columns with json')
                 entry.update(entry[json_field])
+        for list_field in self.heading.list_fields:
+            if entry[list_field] is None:
+                continue
+            entry[list_field] = eval(entry[list_field])
         return entry
 
     def uberfetch(self, *args, expand_json=False, **kwargs):
@@ -362,6 +366,8 @@ class RelationalOperand:
                 table = pd.concat(
                     (table, json_table),
                 axis=1)
+        for list_field in self.heading.list_fields:
+            table[list_field] = table[list_field].apply(evaluate)
         return table
 
     def json_restrict(self, key):
