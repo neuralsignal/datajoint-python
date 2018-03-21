@@ -1,17 +1,19 @@
 import collections
+from collections import OrderedDict
 import itertools
 import inspect
 import platform
 import numpy as np
+import pandas as pd
 import pymysql
 import logging
 import warnings
 from pymysql import OperationalError, InternalError, IntegrityError
 from . import config, DataJointError
 from .declare import declare, add_columns
-from .relational_operand import RelationalOperand
+from .relational_operand import RelationalOperand, Subquery
 from .blob import pack
-from .utils import user_choice
+from .utils import user_choice, to_camel_case
 from .heading import Heading
 from .settings import server_error_codes
 from . import __version__ as version
@@ -33,6 +35,12 @@ class BaseRelation(RelationalOperand):
     _external_table = None
 
     # -------------- required by RelationalOperand ----------------- #
+    @property
+    def schema_module(self):
+        if not hasattr(self, '_schema_module'):
+            return None
+        return self._schema_module
+
     @property
     def heading(self):
         """
@@ -151,7 +159,6 @@ class BaseRelation(RelationalOperand):
         Does not check extra fields.
         :param rows: a pandas DataFrame or dict.
         """
-        import pandas as pd
         if isinstance(rows, pd.DataFrame):
             #does not test if master input is unique
             columns = set(self.heading) & set(rows.columns)
@@ -623,14 +630,16 @@ class BaseRelation(RelationalOperand):
                 return c['schema_'+db].__dict__['context'][class_name]
             elif master_name in c['schema_'+db].__dict__['context']:
                 return getattr(c['schema_'+db].__dict__['context'][master_name], part_name)
-        elif hasattr(schema, db):
-            db_class = getattr(schema, db)
+        elif self.schema_module is None:
+            raise DataJointError(f'{full_table_name} not in context of {self.full_table_name}')
+        elif hasattr(self.schema_module, db):
+            db_class = getattr(self.schema_module, db)
             if master_name is None:
                 return getattr(db_class, class_name)
             else:
                 return getattr(getattr(db_class, master_name), part_name)
         #
-        raise AxolotlError(f'{full_table_name} not in context of {self.full_table_name}')
+        raise DataJointError(f'{full_table_name} not in context of {self.full_table_name}')
 
     def dependents(self, skip_aliased=False, graph=None, as_free=True):
         """Return dependents of table
@@ -747,7 +756,7 @@ class BaseRelation(RelationalOperand):
                 exclude_tables=exclude_tables
                 )
         if not isinstance(exclude_tables, (str, tuple, list)):
-            raise AxolotlError('exclude tables must be of type tuple or list.')
+            raise DataJointError('exclude tables must be of type tuple or list.')
         if self._child_tables is not None and (self._child_tables_settings == child_tables_settings):
             return self._child_tables.copy()
         self._child_tables_settings = child_tables_settings
@@ -919,7 +928,7 @@ class BaseRelation(RelationalOperand):
                 #do not include nullables
                 non_master_to_proj = set(columns) & set(non_master_parent.heading) - set(part_table.heading.nullables)
                 if non_master_to_proj:
-                    warn("non master parents to part table not tested.")
+                    warnings.warn("non master parents to part table not tested.")
                     remove_column_helper(columns, non_master_to_proj)
                     #don't join unnecessary non master tables
                     non_master_parent = (non_master_parent & restrictions).proj(*non_master_to_proj)
@@ -949,9 +958,9 @@ class BaseRelation(RelationalOperand):
                 assert len(from_tables) == len(columns)
             elif isinstance(from_tables, dict):
                 if set(from_tables) - set(columns):
-                    raise AxolotlError('from_tables mapping contains keys not in columns variable.')
+                    raise DataJointError('from_tables mapping contains keys not in columns variable.')
             else:
-                raise AxolotlError('from_tables must be dict or list')
+                raise DataJointError('from_tables must be dict or list')
         parents, rename_list = self.parent_tables(
             graph=graph, only_primary=only_primary,
             skip_aliased=skip_aliased, no_rename=True
@@ -1100,7 +1109,7 @@ class BaseRelation(RelationalOperand):
             #
             return parent_join
         elif not parent_joins and skip_self:
-            raise AxolotlError('Empty deepjoin.')
+            raise DataJointError('Empty deepjoin.')
         #
         for n, parent_join in enumerate(parent_joins):
             if n == 0:
@@ -1136,7 +1145,7 @@ class BaseRelation(RelationalOperand):
         if self.part_tables():
             if pivot:
                 if len(part_tables) > 1:
-                    raise AxolotlError('pivot method with multiple part tables not implemented.')
+                    raise DataJointError('pivot method with multiple part tables not implemented.')
                 part_table = part_tables[0]
                 joined_table = []
                 primary_keys = self.heading.primary_key
