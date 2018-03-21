@@ -10,7 +10,7 @@ import logging
 import warnings
 from pymysql import OperationalError, InternalError, IntegrityError
 from . import config, DataJointError
-from .declare import declare, add_columns
+from .declare import declare, add_columns, find_special_attributes
 from .relational_operand import RelationalOperand, Subquery
 from .blob import pack
 from .utils import user_choice, to_camel_case
@@ -41,6 +41,16 @@ class BaseRelation(RelationalOperand):
             return None
         return self._schema_module
 
+    _special_attributes = None
+    @property
+    def special_attributes(self):
+        if self._special_attributes is None:
+            self._special_attributes = find_special_attributes(
+                self.full_table_name, self.definition, self._context
+            )
+        return self._special_attributes.copy()
+
+
     @property
     def heading(self):
         """
@@ -50,7 +60,10 @@ class BaseRelation(RelationalOperand):
         if self._heading is None:
             self._heading = Heading()  # instance-level heading
         if not self._heading:  # lazy loading of heading
-            self._heading.init_from_database(self.connection, self.database, self.table_name)
+            self._heading.init_from_database(
+                self.connection, self.database, self.table_name,
+                self.special_attributes
+            )
         return self._heading
 
     @property
@@ -255,19 +268,61 @@ class BaseRelation(RelationalOperand):
                 if ignore_extra_fields and name not in heading:
                     return None
                 if heading[name].is_external:
-                    placeholder, value = '%s', self.external_table.put(heading[name].type, value)
+                    if value is None:
+                        placeholder, value = 'NULL', None
+                    else:
+                        placeholder, value = '%s', self.external_table.put(heading[name].type, value)
                 elif heading[name].is_blob:
                     if value is None:
                         placeholder, value = 'NULL', None
                     else:
                         placeholder, value = '%s', pack(value)
+                elif heading[name].is_jsonstring:
+                    if value is None:
+                        placeholder, value = 'NULL', None
+                    elif isinstance(value, str):
+                        placeholder = '%s'
+                        try:
+                            eval_value = eval(value)
+                        except:
+                            raise DataJointError(f'Cannot evaluate jsonstring {value}')
+                        if not isinstance(eval_value, dict):
+                            raise DataJointError(f'jsonstring not dict, but {type(eval_value)}')
+                        if set(eval_value) & set(heading):
+                            raise DataJointError('jsonstring contains values in heading.')
+                    elif isinstance(value, dict):
+                        placeholder = '%s'
+                        if set(value) & set(heading):
+                            raise DataJointError('jsonstring contains values in heading.')
+                        value = str(value)
+                    else:
+                        raise DataJointError(f'jsonstring attribute wrong type {type(value)}')
+                elif heading[name].is_liststring:
+                    if value is None:
+                        placeholder, value = 'NULL', None
+                    elif isinstance(value, str):
+                        placeholder = '%s'
+                        try:
+                            eval_value = eval(value)
+                        except:
+                            raise DataJointError(f'Cannot evaluate jsonstring {value}')
+                        if not isinstance(eval_value, list):
+                            raise DataJointError(f'liststring not dict, but {type(eval_value)}')
+                    elif isinstance(value, list):
+                        placeholder = '%s'
+                        value = str(value)
+                    else:
+                        raise DataJointError(f'liststring attribute wrong type {type(value)}')
                 elif heading[name].numeric:
                     if value is None or value == '' or np.isnan(np.float(value)):  # nans are turned into NULLs
                         placeholder, value = 'NULL', None
                     else:
                         placeholder, value = '%s', (str(int(value) if isinstance(value, bool) else value))
                 else:
-                    placeholder = '%s'
+                    if value is None or value == '':
+                        placeholder, value = 'NULL', None
+                    else:
+                        placeholder = '%s'
                 return name, placeholder, value
 
             def check_fields(fields):

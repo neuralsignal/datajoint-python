@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 default_attribute_properties = dict(    # these default values are set in computed attributes
     name=None, type='expression', in_key=False, nullable=False, default=None, comment='calculated attribute',
     autoincrement=False, numeric=None, string=None, is_blob=False, is_external=False, sql_expression=None,
-    database=None, dtype=object)
+    database=None, dtype=object, is_jsonstring=False, is_liststring=False)
 
 
 class Attribute(namedtuple('_Attribute', default_attribute_properties)):
@@ -77,8 +77,11 @@ class Heading:
 
     @property
     def json_fields(self):
-        return [k for k, v in self.attributes.items()
-                if (v.type == 'varchar(15000)') or ('json' in v.name)]
+        return [k for k, v in self.attributes.items() if v.is_jsonstring]
+
+    @property
+    def list_fields(self):
+        return [k for k, v in self.attributes.items() if v.is_liststring]
 
     @property
     def defaults(self):
@@ -146,7 +149,7 @@ class Heading:
     def __iter__(self):
         return iter(self.attributes)
 
-    def init_from_database(self, conn, database, table_name):
+    def init_from_database(self, conn, database, table_name, special_attributes):
         """
         initialize heading from a database table.  The table must exist already.
         """
@@ -208,7 +211,10 @@ class Heading:
             if attr['is_external']:
                 attr['comment'] = ':'.join(split_comment[2:])
                 attr['type'] = split_comment[1]
-
+            # process special attributes
+            attr['is_jsonstring'] = special_attributes[attr['name']] == 'jsonstring'
+            attr['is_liststring'] = special_attributes[attr['name']] == 'liststring'
+            #
             attr['nullable'] = (attr['nullable'] == 'YES')
             attr['in_key'] = (attr['in_key'] == 'PRI')
             attr['autoincrement'] = bool(re.search(r'auto_increment', attr['Extra'], flags=re.IGNORECASE))

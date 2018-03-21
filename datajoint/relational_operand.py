@@ -334,18 +334,19 @@ class RelationalOperand:
     def fetch(self):
         return Fetch(self)
 
-    def uberfetch1(self, *args, **kwargs):
+    def uberfetch1(self, *args, expand_json=False, **kwargs):
         entry = self.fetch1(*args, **kwargs)
         for json_field in self.heading.json_fields:
             if entry[json_field] is None:
                 continue
             entry[json_field] = eval(entry[json_field])
-            if set(entry[json_field]) & set(entry):
-                raise NameError('conflicting columns with json')
-            entry.update(entry[json_field])
+            if expand_json:
+                if set(entry[json_field]) & set(entry):
+                    raise NameError('conflicting columns with json')
+                entry.update(entry[json_field])
         return entry
 
-    def uberfetch(self, *args, **kwargs):
+    def uberfetch(self, *args, expand_json=False, **kwargs):
         def evaluate(x):
             if pd.isnull(x):
                 return None
@@ -354,12 +355,13 @@ class RelationalOperand:
         table = pd.DataFrame(self.fetch(*args, **kwargs))
         for json_field in self.heading.json_fields:
             table[json_field] = table[json_field].apply(evaluate)
-            json_table = table[json_field].apply(pd.Series)
-            if set(table.columns) & set(json_table.columns):
-                raise NameError('conflicting columns with json')
-            table = pd.concat(
-                (table, json_table),
-            axis=1)
+            if expand_json:
+                json_table = table[json_field].apply(pd.Series)
+                if set(table.columns) & set(json_table.columns):
+                    raise NameError('conflicting columns with json')
+                table = pd.concat(
+                    (table, json_table),
+                axis=1)
         return table
 
     def json_restrict(self, key):

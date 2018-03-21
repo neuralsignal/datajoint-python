@@ -11,6 +11,8 @@ from . import DataJointError, config
 STORE_NAME_LENGTH = 8
 STORE_HASH_LENGTH = 43
 HASH_DATA_TYPE = 'char(51)'
+JSONSTRING_DATA_TYPE = 'varchar(15000)'
+LISTSTRING_DATA_TYPE = 'varchar(5000)'
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +136,51 @@ def compile_foreign_key(line, context, attributes, primary_key, attr_sql, foreig
             pk='`,`'.join(ref.primary_key),
             ref=ref.full_table_name))
 
+def find_special_attributes(full_table_name, definition, context):
+    """
+    Parse declaration and return dictionary for each attribute with
+    special identifiers not deduced from database
+    """
+    # split definition into lines
+    definition = re.split(r'\s*\n\s*', definition.strip())
+    # check for optional table comment
+    in_key = True  # parse primary keys
+    primary_key = []
+    attributes = []
+    attribute_sql = []
+    foreign_key_sql = []
+    index_sql = []
+    uses_external = False
+    special_attributes = {}
+    #
+    for line in definition:
+        if line.startswith('#'):  # additional comments are ignored
+            pass
+        elif line.startswith('---') or line.startswith('___'):
+            in_key = False  # start parsing dependent attributes
+        elif is_foreign_key(line):
+            compile_foreign_key(line, context, attributes,
+                                primary_key if in_key else None,
+                                attribute_sql, foreign_key_sql)
+        elif re.match(r'^(unique\s+)?index[^:]*$', line, re.I):   # index
+            index_sql.append(line)  # the SQL syntax is identical to DataJoint's
+        else:
+            name, sql, is_external, special_attr = compile_attribute(
+                line, in_key, foreign_key_sql)
+            #
+            special_attributes[name] = special_attr
+            #
+            uses_external = uses_external or is_external
+            if in_key and name not in primary_key:
+                primary_key.append(name)
+            if name not in attributes:
+                attributes.append(name)
+                attribute_sql.append(sql)
+    for attr in attributes:
+        if attr not in special_attributes:
+            special_attributes[attr] = None
+    #
+    return special_attributes
 
 def declare(full_table_name, definition, context):
     """
@@ -167,7 +214,7 @@ def declare(full_table_name, definition, context):
         elif re.match(r'^(unique\s+)?index[^:]*$', line, re.I):   # index
             index_sql.append(line)  # the SQL syntax is identical to DataJoint's
         else:
-            name, sql, is_external = compile_attribute(line, in_key, foreign_key_sql)
+            name, sql, is_external, special_attr = compile_attribute(line, in_key, foreign_key_sql)
             uses_external = uses_external or is_external
             if in_key and name not in primary_key:
                 primary_key.append(name)
@@ -214,7 +261,7 @@ def add_columns(full_table_name, definition, heading, context):
             #continue
             index_sql.append(line)  # the SQL syntax is identical to DataJoint's
         else:
-            name, sql, is_external = compile_attribute(line, in_key, foreign_key_sql)
+            name, sql, is_external, special_attr = compile_attribute(line, in_key, foreign_key_sql)
             if name in heading:
                 continue
             uses_external = uses_external or is_external
@@ -249,7 +296,7 @@ def compile_attribute(line, in_key, foreign_key_sql):
     :param line: attribution line
     :param in_key: set to True if attribute is in primary key set
     :param foreign_key_sql:
-    :returns: (name, sql, is_external) -- attribute name and sql code for its declaration
+    :returns: (name, sql, is_external, special_attr) -- attribute name and sql code for its declaration
     """
 
     try:
@@ -278,7 +325,22 @@ def compile_attribute(line, in_key, foreign_key_sql):
     match['comment'] = match['comment'].replace('"', '\\"')   # escape double quotes in comment
 
     is_external = match['type'].startswith('external')
-    if not is_external:
+    is_jsonstring = match['type'] == 'jsonstring'
+    is_liststring = match['type'] == 'liststring'
+    special_attr = None
+    if is_jsonstring:
+        special_attr = 'jsonstring'
+        if in_key:
+            raise DataJointError('Jsonstring attributes cannot be primary in:\n%s' % line)
+        sql = '`{name}` {jsonstring_type} {default} COMMENT ":{type}:{comment}"'.format(
+            jsonstring_type=JSONSTRING_DATA_TYPE, **match)
+    elif is_liststring:
+        special_attr = 'liststring'
+        if in_key:
+            raise DataJointError('Liststring attributes cannot be primary in:\n%s' % line)
+        sql = '`{name}` {liststring_type} {default} COMMENT ":{type}:{comment}"'.format(
+            liststring_type=LISTSTRING_DATA_TYPE, **match)
+    elif not is_external:
         sql = ('`{name}` {type} {default}' + (' COMMENT "{comment}"' if match['comment'] else '')).format(**match)
     else:
         # process externally stored attribute
@@ -307,4 +369,4 @@ def compile_attribute(line, in_key, foreign_key_sql):
             "FOREIGN KEY (`{name}`) REFERENCES {{external_table}} (`hash`) "
             "ON UPDATE RESTRICT ON DELETE RESTRICT".format(**match))
 
-    return match['name'], sql, is_external
+    return match['name'], sql, is_external, special_attr
