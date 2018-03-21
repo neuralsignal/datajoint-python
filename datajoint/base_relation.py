@@ -582,6 +582,584 @@ class BaseRelation(RelationalOperand):
         for attr, value in update_dict.items():
             self._update(attr, value)
 
+    @property
+    def classname(self):
+        return self.__class__.__name__
+
+    def get_table_class(self, full_table_name):
+        """get table class from arbitrary table name
+        """
+        self_class = self.classname
+        name = full_table_name.replace('`', '').split('.')
+        if '__' in name[1]:
+            if name[1].startswith('__') and not '__' in name[1][2:]:
+                part_name = None
+                master_name = None
+            else:
+                part_name = to_camel_case(name[1].split('__')[-1])
+                master_name = to_camel_case(name[1].split('__')[-2])
+        else:
+            part_name = None
+            master_name = None
+        #
+        db = name[0]
+        class_name = to_camel_case(name[1])
+        c = self.context
+        if db in c:
+            #in other schema
+            if master_name is None:
+                return getattr(c[db], class_name)
+            else:
+                return getattr(getattr(c[db], master_name), part_name)
+        elif class_name in c:
+            #within the same schema
+            return c[class_name]
+        elif master_name in c and master_name is not None:
+            return getattr(c[master_name], part_name)
+        elif hasattr(self, class_name.replace(self_class, '')):
+            return getattr(self, class_name.replace(self_class, ''))
+        elif 'schema_' + db in c:
+            if class_name in c['schema_'+db].__dict__['context']:
+                return c['schema_'+db].__dict__['context'][class_name]
+            elif master_name in c['schema_'+db].__dict__['context']:
+                return getattr(c['schema_'+db].__dict__['context'][master_name], part_name)
+        elif hasattr(schema, db):
+            db_class = getattr(schema, db)
+            if master_name is None:
+                return getattr(db_class, class_name)
+            else:
+                return getattr(getattr(db_class, master_name), part_name)
+        #
+        raise AxolotlError(f'{full_table_name} not in context of {self.full_table_name}')
+
+    def dependents(self, skip_aliased=False, graph=None, as_free=True):
+        """Return dependents of table
+        """
+        if graph is None:
+            graph = self.connection.dependencies
+            graph.load()
+        table_dict = OrderedDict()
+        for table in graph.descendants(self.full_table_name):
+            if not table.isdigit() and table not in table_dict:
+                if as_free:
+                    table_dict[table] = FreeRelation(self.connection, table)
+                else:
+                    table_dict[table] = self.get_table_class(table)
+            elif not skip_aliased and table.isdigit():
+                child, edge = next(iter(graph.children(table).items()))
+                if as_free:
+                    table_ = FreeRelation(self.connection, child)
+                else:
+                    table_ = self.get_table_class(child)
+                rename_proj = {
+                    old_name : new_name
+                    for new_name, old_name in edge['attr_map'].items()
+                    if new_name != old_name
+                }
+                to_proj = set(table_.heading) - set(rename_proj.values())
+                table_dict[table] = table_.proj(*to_proj, **rename_proj)
+        return table_dict
+
+    _part_tables = None
+    def part_tables(self, graph=None):
+        """return part table classes as list.
+        It will not work with aliased part tables.
+        """
+        if self._part_tables is not None:
+            return self._part_tables.copy()
+        if graph is None:
+            graph = self.connection.dependencies
+            graph.load()
+        table_dict = graph.children(self.full_table_name)
+        self_table_name = self.full_table_name.replace('`', '')
+        part_tables_list = []
+        for other_table_name, info_dict in table_dict.items():
+            other_table_name = other_table_name.replace('`', '')
+            if other_table_name == self_table_name:
+                continue
+            elif self_table_name in other_table_name:
+                part_name = other_table_name.replace(self_table_name, '')
+                part_tables_list.append(getattr(self, to_camel_case(part_name)))
+        self._part_tables = part_tables_list
+        return part_tables_list
+
+    _parent_tables = None
+    _parent_tables_settings = None
+    _to_rename = None
+    def parent_tables(self, graph=None, only_primary=False, skip_aliased=False, no_rename=False):
+        """return parent tables as list. If no_rename is True then return list of dictionaries
+        of to rename columns as well.
+        """
+        parent_tables_settings = dict(
+                only_primary=only_primary,
+                skip_aliased=skip_aliased,
+                no_rename=no_rename
+            )
+        if self._parent_tables is not None and (self._parent_tables_settings == parent_tables_settings):
+            if no_rename:
+                return self._parent_tables.copy(), self._to_rename.copy()
+            else:
+                return self._parent_tables.copy()
+        self._parent_tables_settings = parent_tables_settings
+        if graph is None:
+            graph = self.connection.dependencies
+            graph.load()
+        to_rename_list = []
+        parents_tables_list = []
+        parents_dict = graph.parents(self.full_table_name)
+        for table_name, info_dict in parents_dict.items():
+            if only_primary and not info_dict['primary']:
+                continue
+            elif skip_aliased and info_dict['aliased']:
+                continue
+            elif info_dict['aliased']:
+                parent, edge = next(iter(graph.parents(table_name).items()))
+                table_ = self.get_table_class(parent)
+                rename_proj = {
+                    new_name : old_name
+                    for new_name, old_name in edge['attr_map'].items()
+                    if new_name != old_name
+                }
+                to_proj = set(table_.heading) - set(rename_proj.values())
+                if no_rename:
+                    parents_tables_list.append(table_)
+                    to_rename_list.append(rename_proj)
+                else:
+                    parents_tables_list.append(table_.proj(*to_proj, **rename_proj))
+                    to_rename_list.append({})
+            else:
+                parents_tables_list.append(self.get_table_class(table_name))
+                to_rename_list.append({})
+        self._parent_tables = parents_tables_list
+        self._to_rename = to_rename_list
+        if no_rename:
+            return parents_tables_list, to_rename_list
+        else:
+            return parents_tables_list
+
+    _child_tables = None
+    _child_tables_settings = None
+    def child_tables(self, graph=None, only_primary=True, exclude_tables=[]):
+        """return child tables as list, excluding part tables, and aliased child tables.
+        """
+        child_tables_settings = dict(
+                only_primary=only_primary,
+                exclude_tables=exclude_tables
+                )
+        if not isinstance(exclude_tables, (str, tuple, list)):
+            raise AxolotlError('exclude tables must be of type tuple or list.')
+        if self._child_tables is not None and (self._child_tables_settings == child_tables_settings):
+            return self._child_tables.copy()
+        self._child_tables_settings = child_tables_settings
+        if graph is None:
+            graph = self.connection.dependencies
+            graph.load()
+        child_tables_list = []
+        children_dict = graph.children(self.full_table_name)
+        self_table_name = self.full_table_name.replace('`', '')
+        for other_table_name, info_dict in children_dict.items():
+            full_table_name = other_table_name
+            other_table_name = other_table_name.replace('`', '')
+            if full_table_name in exclude_tables:
+                continue
+            if other_table_name == self_table_name:
+                continue
+            elif self_table_name in other_table_name:
+                continue
+            elif info_dict['aliased']:
+                continue
+            elif only_primary and not info_dict['primary']:
+                continue
+            elif other_table_name in exclude_tables:
+                continue
+            else:
+                child_table = self.get_table_class(full_table_name)
+                child_tables_list.append(child_table)
+        self._child_tables = child_tables_list
+        return child_tables_list
+
+    _has_dependents = None
+    _has_part_tables = None
+    @property
+    def has_dependents(self):
+        """
+        """
+        if self._has_dependents is None:
+            self._has_dependents = bool(self.children())
+        return self._has_dependents
+
+    @property
+    def has_part_tables(self):
+        """
+        """
+        if self._has_part_tables is None:
+            self._has_part_tables = bool(self.part_tables())
+        return self._has_part_tables
+
+    def deepjoin(
+        self, columns, restrictions={}, check_parts=True,
+        graph=None, only_primary=False, skip_aliased=False,
+        skip_self=False, check_parts_self=True, check_children=True,
+        skip_tables=[], restrict_tables=None, from_tables=None
+    ):
+        """go back and deepjoin ancestors/upstream tables according
+        to columns past. Does not work with part tables.
+
+        Parameters
+        ----------
+        columns : list
+            list of columns to look for
+        restrictions : dict or list of dicts
+            restrictions to apply to each table (i.e. &)
+        check_parts : bool
+            check if a table has a part table, if so add
+            the necessary part table columns to the joined table
+        graph : dj.Connection
+            connection to the database. If None, it will use self
+        only_primary : bool
+            Whether to only look at primary keys upstream of the
+            database hierarchy.
+        skip_aliased : bool
+            Whether to skip aliased table columns (i.e. where the
+            name has been changed).
+        skip_self : bool
+            Whether to ignore the existence of columns in self. Will also
+            check part tables of self if check_parts_self and not skip_self.
+        check_children : bool
+            Whether to check children table -- not self.
+        skip_tables : list
+            List of tables to skip (use full table name or class name).
+            Will also skip the parents of this table.
+        restrict_tables : list
+            List of tables to join. If None, then no restriction
+        from_tables : list or dict
+            List of tables (full table name or class name) from which
+            to take the columns (i.e. same length as columns variable).
+            If dictionary mapping: columns -> table.
+
+        Returns
+        -------
+        joined_table : dj.Relation
+            datajoint relation with all the desired columns and
+            primary keys joined together.
+        """
+        #TODO restriction columns should also be checked for
+        def remove_column_helper(columns, proj_set):
+            for iproj in proj_set:
+                columns.remove(iproj)
+
+        def create_proj_set(table, columns, from_tables, to_rename={}, table_name=None, full_table_name=None):
+            #
+            if table_name is None:
+                table_name = to_camel_case(table.table_name)
+            if full_table_name is None:
+                full_table_name = table.full_table_name
+            #
+            proj_set = (
+                (set(columns) & set(table.heading) - set(to_rename.values()))
+                | (set(columns) & set(to_rename))
+            )
+            if from_tables is None:
+                for iproj in proj_set:
+                    columns.remove(iproj)
+            elif isinstance(from_tables, list):
+                for column, from_table in zip(columns, from_tables):
+                    if table_name == from_table:
+                        pass
+                    elif full_table_name == from_table:
+                        pass
+                    else:
+                        proj_set.discard(column)
+                for iproj in proj_set:
+                    raise NotImplementedError('from tables as list')
+            elif isinstance(from_tables, dict):
+                for column in (proj_set & set(from_tables)):
+                    if table_name == from_tables[column]:
+                        del(from_tables[column])
+                    elif full_table_name == from_tables[column]:
+                        del(from_tables[column])
+                    else:
+                        proj_set.remove(column)
+                for iproj in proj_set:
+                    columns.remove(iproj)
+            return proj_set
+        #
+        def part_table_helper(
+            parent_join, columns, restrictions, part_table, renames,
+            graph=graph, only_primary=only_primary, skip_aliased=skip_aliased,
+            from_tables=None, restrict_tables=restrict_tables,
+            skip_tables=skip_tables
+        ):
+            #check if part_table is initialized
+            try:
+                part_table = part_table()
+            except:
+                pass
+            #handling renamed foreign keys with part tables
+            #non master parents not properly tested
+            non_master_parents = [
+                parent_table
+                for parent_table in part_table.parent_tables(
+                    graph=graph, only_primary=only_primary,
+                    skip_aliased=skip_aliased
+                )
+                if isinstance(parent_table, Subquery)
+            ]
+            #
+            part_to_rename = {
+                new_name : old_name
+                for new_name, old_name in renames.items()
+                if old_name in (set(part_table.heading) & set(renames.values()))
+            }
+            part_to_proj = create_proj_set(part_table, columns, from_tables, part_to_rename)
+            #
+            # non master tables should be renamed already, as subquery
+            proj_non_masters = []
+            for non_master_parent in non_master_parents:
+                #do not include nullables
+                non_master_to_proj = set(columns) & set(non_master_parent.heading) - set(part_table.heading.nullables)
+                if non_master_to_proj:
+                    warn("non master parents to part table not tested.")
+                    remove_column_helper(columns, non_master_to_proj)
+                    #don't join unnecessary non master tables
+                    non_master_parent = (non_master_parent & restrictions).proj(*non_master_to_proj)
+                    part_to_proj |= (
+                        set(non_master_parent.heading.primary_key) & set(part_table.heading)
+                    )
+                    proj_non_masters.append(non_master_parent)
+            #
+            #only if there is something to proj
+            if part_to_proj:
+                #Does not work with rename parts!
+                part_table = (part_table & restrictions).proj(*part_to_proj, **part_to_rename)
+                parent_join = parent_join * part_table
+            else:
+                #skip proj non masters if nothing to project - redundant
+                return parent_join
+            #
+            for proj_non_master in proj_non_masters:
+                parent_join = parent_join * proj_non_master
+            return parent_join
+
+        if graph is None:
+            graph = self.connection.dependencies
+            graph.load()
+        if from_tables is not None:
+            if isinstance(from_tables, list):
+                assert len(from_tables) == len(columns)
+            elif isinstance(from_tables, dict):
+                if set(from_tables) - set(columns):
+                    raise AxolotlError('from_tables mapping contains keys not in columns variable.')
+            else:
+                raise AxolotlError('from_tables must be dict or list')
+        parents, rename_list = self.parent_tables(
+            graph=graph, only_primary=only_primary,
+            skip_aliased=skip_aliased, no_rename=True
+        ) # also renames it appropriately
+        if check_parts_self:
+            part_tables = self.part_tables(graph=graph)
+            for part_table in part_tables:
+                try:
+                    part_table = part_table()
+                except:
+                    pass
+                part_parents, part_rename_list = part_table.parent_tables(
+                    graph=graph, only_primary=only_primary,
+                    skip_aliased=skip_aliased, no_rename=True
+                )
+                for part_parent, part_renames in zip(part_parents, part_rename_list):
+                    if (part_parent not in parents) and (part_parent != self.__class__):
+                        parents.append(part_parent)
+                        rename_list.append(part_renames)
+        #stop massive recursion by remove columns
+        to_proj = set()
+        if not skip_self:
+            to_proj = create_proj_set(self, columns, from_tables)
+        parent_joins = []
+        for parent, renames in zip(parents, rename_list):
+            #initialize, if not yet
+            try:
+                parent = parent()
+            except:
+                pass
+            #
+            if parent.full_table_name in skip_tables:
+                continue
+            elif parent.classname in skip_tables:
+                continue
+            if restrict_tables is not None:
+                if parent.full_table_name in restrict_tables:
+                    pass
+                elif parent.classname in restrict_tables:
+                    pass
+                else:
+                    continue
+            parent_to_proj = set(parent.heading) - set(renames.values())
+            #
+            if check_parts:
+                part_tables = parent.part_tables(graph=graph)
+            else:
+                part_tables = []
+            if check_children:
+                child_tables = parent.child_tables(graph=graph, exclude_tables=[self.full_table_name])
+            else:
+                child_tables = []
+            #if renamed parent do not look deeper
+            #if no columns left do not look deeper
+            if not columns:
+                break
+            elif renames:
+                parent_table_name = parent.classname
+                parent_full_table_name = parent.full_table_name
+                parent = parent.proj(*parent_to_proj, **renames)
+                parent_to_proj = create_proj_set(
+                    parent, columns, from_tables,
+                    table_name=parent_table_name,
+                    full_table_name=parent_full_table_name
+                )
+                parent_join = (parent & restrictions).proj(*parent_to_proj)
+            else:
+                parent_join = parent.deepjoin(
+                    columns, restrictions,
+                    check_parts=check_parts,
+                    graph=graph, only_primary=only_primary,
+                    skip_aliased=skip_aliased,
+                    check_parts_self=False,
+                    check_children=check_children,
+                    skip_tables=skip_tables,
+                    skip_self=False,
+                    restrict_tables=restrict_tables
+                )
+
+            for part_table in part_tables:
+                if part_table.full_table_name in skip_tables:
+                    continue
+                elif to_camel_case(part_table.table_name) in skip_tables:
+                    continue
+                if restrict_tables is not None:
+                    if part_table.full_table_name in restrict_tables:
+                        pass
+                    elif to_camel_case(part_table.table_name) in skip_tables:
+                        pass
+                    else:
+                        continue
+                #
+                parent_join = part_table_helper(
+                    parent_join, columns, restrictions, part_table, renames
+                )
+            #
+            for child_table in child_tables:
+                if child_table.full_table_name in skip_tables:
+                    continue
+                elif to_camel_case(child_table.table_name) in skip_tables:
+                    continue
+                if restrict_tables is not None:
+                    if child_table.full_table_name in restrict_tables:
+                        pass
+                    elif to_camel_case(child_table.table_name) in restrict_tables:
+                        pass
+                    else:
+                        continue
+                child_to_rename = {
+                    new_name : old_name
+                    for new_name, old_name in renames.items()
+                    if old_name in (set(child_table.heading) & set(renames.values()))
+                }
+                child_to_proj = create_proj_set(child_table, columns, from_tables, child_to_rename)
+                if child_to_proj:
+                    #does not work with renamed names in child!
+                    child_table = (child_table & restrictions).proj(*child_to_proj, **child_to_rename)
+                    parent_join = parent_join * child_table
+            #only join a parent if its primary key are not nullable in self
+            #and are not in to_proj (if it is required projection you do
+            #not want to include NULL)
+            add_to_proj = (set(parent.heading.primary_key) & set(self.heading))
+            dont_proj = add_to_proj & set(self.heading.nullables) - to_proj
+            if dont_proj:
+                continue
+            elif not only_primary:
+                to_proj |= add_to_proj
+            #add to parents to be joined
+            parent_joins.append(parent_join)
+            #
+        #add part tables of first self
+        if check_parts_self:
+            part_tables = self.part_tables(graph=graph)
+        else:
+            part_tables = []
+        #
+        if not parent_joins and not skip_self:
+            #
+            parent_join = (self & restrictions).proj(*to_proj)
+            #join part tables
+            for part_table in part_tables:
+                parent_join = part_table_helper(
+                    parent_join, columns, restrictions, part_table,
+                    renames={}, from_table=from_tables
+                )
+            #
+            return parent_join
+        elif not parent_joins and skip_self:
+            raise AxolotlError('Empty deepjoin.')
+        #
+        for n, parent_join in enumerate(parent_joins):
+            if n == 0:
+                joined_table = parent_join
+            else:
+                joined_table = joined_table * parent_join
+        if not skip_self:
+            joined_table = (self & restrictions).proj(*to_proj) * joined_table
+            #join part tables
+            for part_table in part_tables:
+                joined_table = part_table_helper(
+                    joined_table, columns, restrictions, part_table,
+                    renames={}, from_tables=from_tables
+                )
+        #
+        return joined_table
+
+    def deepfetch(self, *args, **kwargs):
+        """far/deepfetch columns from upstream
+        using deepjoin.
+        """
+        return self.deepjoin(*args, **kwargs).fetch()
+
+    def fetchparts(self, pivot=False, **kwargs):
+        """fetch a table with its part tables
+        or just fetch the table if no part tables exist
+
+        Returns
+        -------
+        fetched_table : numpy.recarray/list of OrderedDicts
+        """
+        part_tables = self.part_tables()
+        if self.part_tables():
+            if pivot:
+                if len(part_tables) > 1:
+                    raise AxolotlError('pivot method with multiple part tables not implemented.')
+                part_table = part_tables[0]
+                joined_table = []
+                primary_keys = self.heading.primary_key
+                self_columns = set(self.heading)
+                for entry in self:
+                    key = {
+                        primary_key : entry[primary_key]
+                        for primary_key in primary_keys
+                    }
+                    part_dataframe = pd.DataFrame((part_table & key).fetch())
+                    part_columns = set(part_dataframe.columns) - self_columns
+                    part_dict = part_dataframe[list(part_columns)].to_dict('list')
+                    entry.update(part_dict)
+                    joined_table.append(entry)
+                return joined_table
+            else:
+                joined_table = self
+                for part_table in part_tables:
+                    joined_table = joined_table * part_table
+                return joined_table.fetch(**kwargs)
+        else:
+            return self.fetch(**kwargs)
+
 def lookup_class_name(name, context, depth=3):
     """
     given a table name in the form `database`.`table_name`, find its class in the context.
