@@ -44,9 +44,17 @@ class BaseRelation(RelationalOperand):
     _special_attributes = None
     @property
     def special_attributes(self):
-        if self._special_attributes is None:
+        if self._special_attributes is None and hasattr(self, 'definition'):
             self._special_attributes = find_special_attributes(
                 self.full_table_name, self.definition, self._context
+            )
+        elif self._special_attributes is None:
+            schema, table_class_name = self.full_table_name.replace('`', '').split('.')
+            table_class_name = to_camel_case(table_class_name)
+            context = self.connection.schemas[schema].context
+            table_class = context[table_class_name]
+            self._special_attributes = find_special_attributes(
+                self.full_table_name, table_class.definition, context
             )
         return self._special_attributes.copy()
 

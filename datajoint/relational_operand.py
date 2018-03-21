@@ -371,7 +371,7 @@ class RelationalOperand:
         return table
 
     def json_restrict(self, key):
-        table = self.proj(*self.heading.json_fields).uberfetch()
+        table = self.proj(*self.heading.json_fields).uberfetch(expand_json=True)
         if isinstance(key, dict):
             for column, value in key.items():
                 table = table[table[column] == value]
