@@ -184,8 +184,8 @@ def declare(full_table_name, definition, context):
                        index_sql) +
             '\n) ENGINE=InnoDB, CHARACTER SET latin1, COMMENT "%s"' % table_comment), uses_external
 
-def alter_table(full_table_name, definition, heading, context):
-    """alter table columns
+def add_columns(full_table_name, definition, heading, context):
+    """Add columns to an existing table
     """
     # split definition into lines
     definition = re.split(r'\s*\n\s*', definition.strip())

@@ -8,7 +8,7 @@ import logging
 import warnings
 from pymysql import OperationalError, InternalError, IntegrityError
 from . import config, DataJointError
-from .declare import declare, alter_table
+from .declare import declare, add_columns
 from .relational_operand import RelationalOperand
 from .blob import pack
 from .utils import user_choice
@@ -72,7 +72,7 @@ class BaseRelation(RelationalOperand):
     def add_columns(self):
         """
         """
-        sql, uses_external = alter_table(self.full_table_name, self.definition, self.heading, self._context)
+        sql, uses_external = add_columns(self.full_table_name, self.definition, self.heading, self._context)
         if uses_external:
             external_table = self.connection.schemas[self.database].external_table
             sql = sql.format(external_table=external_table.full_table_name)
@@ -137,6 +137,44 @@ class BaseRelation(RelationalOperand):
         if self._external_table is None:
             self._external_table = self.connection.schemas[self.database].external_table
         return self._external_table
+
+    def insertp(self, rows, **kwargs):
+        """insert data into self and its part tables
+        :param rows: an iterable of pandas DataFrames or dicts
+        """
+        #TODO make insertp automatic if only pandas DataFrame is passed
+        for row in rows:
+            self.insert1p(row, **kwargs)
+
+    def insert1p(self, rows, **kwargs):
+        """insert data into self and its part tables.
+        Does not check extra fields.
+        :param rows: a pandas DataFrame or dict.
+        """
+        import pandas as pd
+        if isinstance(rows, pd.DataFrame):
+            #does not test if master input is unique
+            columns = set(self.heading) & set(rows.columns)
+            master_input = rows[list(columns)].iloc[0].dropna().to_dict()
+            self.insert1(master_input, **kwargs)
+            for part_table in self.part_tables():
+                part_columns = set(part_table.heading) & set(rows.columns)
+                part_input = rows[list(part_columns)]
+                if part_input.isnull().values.any():
+                    raise NotImplementedError('insert to part tables with nan values')
+                part_input = part_input.to_dict('records')
+                part_table.insert(part_input, **kwargs)
+        elif isinstance(rows, dict):
+            rows = pd.Series(rows)
+            columns = set(self.heading) & set(rows.index)
+            master_input = rows[list(columns)].dropna().to_dict()
+            self.insert1(master_input, **kwargs)
+            for part_table in self.part_tables():
+                part_columns = set(part_table.heading) & set(rows.index)
+                part_input = rows[list(part_columns)].dropna().to_dict()
+                part_table.insert1(part_input, **kwargs)
+        else:
+            raise DataJointError(f"Rows must pandas dataframe or dict not {type(rows)}")
 
     def insert1(self, row, **kwargs):
         """
