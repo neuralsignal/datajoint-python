@@ -327,6 +327,7 @@ def compile_attribute(line, in_key, foreign_key_sql):
     is_external = match['type'].startswith('external')
     is_jsonstring = match['type'] == 'jsonstring'
     is_liststring = match['type'] == 'liststring'
+    is_evalenum = match['type'].startswith('evalenum')
     special_attr = None
     if is_jsonstring:
         special_attr = 'jsonstring'
@@ -340,6 +341,10 @@ def compile_attribute(line, in_key, foreign_key_sql):
             raise DataJointError('Liststring attributes cannot be primary in:\n%s' % line)
         sql = '`{name}` {liststring_type} {default} COMMENT ":{type}:{comment}"'.format(
             liststring_type=LISTSTRING_DATA_TYPE, **match)
+    elif is_evalenum:
+        special_attr = 'evalenum'
+        match['type'] = match['type'][len('eval'):]
+        sql = ('`{name}` {type} {default}' + (' COMMENT ":evalenum:{comment}"' if match['comment'] else '')).format(**match)
     elif not is_external:
         sql = ('`{name}` {type} {default}' + (' COMMENT "{comment}"' if match['comment'] else '')).format(**match)
     else:

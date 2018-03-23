@@ -190,6 +190,24 @@ class RelationalOperand:
         cond = self._make_condition(self.restriction)
         return '' if cond is True else ' WHERE %s' % cond
 
+    def where_like_clause(self, select_fields=None):
+        """Create Where like clasue with or binders
+        """
+        if select_fields is None:
+            attrs = self.heading.project(self.heading.strings).as_sql.split(',')
+        else:
+            attrs = self.heading.project(self.heading.strings).as_sql.split(',')
+        attr_no = len(attrs)
+        self._string_attr_no = attr_no
+        expr = ' WHERE ('
+        for i, attr in enumerate(attrs):
+            expr += '%s LIKE ' % attr
+            if i+1 != attr_no:
+                expr += '%s OR '
+            else:
+                expr += '%s);'
+        return expr
+
     def get_select_fields(self, select_fields=None):
         """
         :return: string specifying the attributes to return
@@ -344,10 +362,10 @@ class RelationalOperand:
                 if set(entry[json_field]) & set(entry):
                     raise NameError('conflicting columns with json')
                 entry.update(entry[json_field])
-        for list_field in self.heading.list_fields:
-            if entry[list_field] is None:
+        for field in self.heading.list_fields + self.heading.evalenum_fields:
+            if entry[field] is None:
                 continue
-            entry[list_field] = eval(entry[list_field])
+            entry[field] = eval(entry[field])
         return entry
 
     def uberfetch(self, *args, expand_json=False, **kwargs):
@@ -366,8 +384,8 @@ class RelationalOperand:
                 table = pd.concat(
                     (table, json_table),
                 axis=1)
-        for list_field in self.heading.list_fields:
-            table[list_field] = table[list_field].apply(evaluate)
+        for field in self.heading.list_fields + self.heading.evalenum_fields:
+            table[field] = table[field].apply(evaluate)
         return table
 
     def json_restrict(self, key):
@@ -512,6 +530,13 @@ class RelationalOperand:
             from_=self.from_clause,
             where=self.where_clause)
 
+    def search(self, match, select_fields=None):
+        query = 'SELECT {fields} FROM {from_}{where}'.format(
+            fields=("DISTINCT " if self.distinct else "") + self.get_select_fields(select_fields),
+            from_=self.from_clause,
+            where=self.where_like_clause(select_fields))
+        return self.connection.query(query, tuple(['%'+match+'%']*self._string_attr_no))
+
     def __len__(self):
         """
         number of tuples in the relation.
@@ -531,6 +556,27 @@ class RelationalOperand:
         (item in relation) is equivalent to bool(self & item) but may be executed more efficiently.
         """
         return bool(self & item)  # May be optimized e.g. using an EXISTS query
+
+    def iterrows(self):
+        class IterRows:
+            def __init__(self, relation):
+                self.relation = relation
+            def __iter__(self):
+                self.proj = self.relation.proj().fetch(as_dict=True)
+                return self
+            def __next__(self):
+                if not hasattr(self, 'proj'):
+                    raise TypeError('object is not iterator')
+                try:
+                    key = self.proj.pop(0)
+                except IndexError:
+                    raise StopIteration
+                n = self.relation & key
+                if len(n) == 0:
+                    return next(n)
+                else:
+                    return n
+        return IterRows(self)
 
     def __iter__(self):
         self._iter_only_key = all(v.in_key for v in self.heading.attributes.values())

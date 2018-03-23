@@ -180,6 +180,7 @@ class BaseRelation(RelationalOperand):
         Does not check extra fields.
         :param rows: a pandas DataFrame or dict.
         """
+        #TODO autoincrement
         if isinstance(rows, pd.DataFrame):
             #does not test if master input is unique
             columns = set(self.heading) & set(rows.columns)
@@ -187,6 +188,8 @@ class BaseRelation(RelationalOperand):
             self.insert1(master_input, **kwargs)
             for part_table in self.part_tables():
                 part_columns = set(part_table.heading) & set(rows.columns)
+                if not part_columns:
+                    continue
                 part_input = rows[list(part_columns)]
                 if part_input.isnull().values.any():
                     raise NotImplementedError('insert to part tables with nan values')
@@ -199,6 +202,8 @@ class BaseRelation(RelationalOperand):
             self.insert1(master_input, **kwargs)
             for part_table in self.part_tables():
                 part_columns = set(part_table.heading) & set(rows.index)
+                if not part_columns:
+                    continue
                 part_input = rows[list(part_columns)].dropna().to_dict()
                 part_table.insert1(part_input, **kwargs)
         else:
@@ -321,6 +326,18 @@ class BaseRelation(RelationalOperand):
                         value = str(value)
                     else:
                         raise DataJointError(f'liststring attribute wrong type {type(value)}')
+                elif heading[name].is_evalenum:
+                    if value is None:
+                        placeholder, value = 'NULL', None
+                    elif isinstance(value, str):
+                        placeholder = '%s'
+                        try:
+                            eval_value = eval(value)
+                        except:
+                            raise DataJointError(f'Cannot evaluate jsonstring {value}')
+                    else:
+                        placeholder = '%s'
+                        value = str(value)
                 elif heading[name].numeric:
                     if value is None or value == '' or np.isnan(np.float(value)):  # nans are turned into NULLs
                         placeholder, value = 'NULL', None
@@ -651,6 +668,12 @@ class BaseRelation(RelationalOperand):
         """
         for attr, value in update_dict.items():
             self._update(attr, value)
+
+    def uberupdate(self, update_dict):
+        """update multiple rows
+        """
+        for row in self.iterrows():
+            row.update(update_dict)
 
     @property
     def classname(self):
