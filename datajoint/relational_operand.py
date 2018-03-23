@@ -31,6 +31,75 @@ def assert_join_compatibility(rel1, rel2):
         except StopIteration:
             pass
 
+class MatchWrapper(object):
+
+    def __init__(self, string, attr):
+        self.attr = attr
+        self.string = string
+
+    def __call__(self, *args, **kwargs):
+        new = self.attr(*args, **kwargs)
+        if isinstance(new, str):
+            new = MatchString(new)
+        else:
+            return new
+        if not new.match:
+            new.match = self.string.match
+        return new
+
+class MatchString(str):
+    """string with attributes
+    """
+
+    def __init__(self, string):
+        super().__init__()
+        if isinstance(string, MatchString):
+            self.match = string.match
+        else:
+            self.match = []
+
+    def __getattribute__(self, name):
+        if name in dir(str):
+            def method(self, *args, **kwargs):
+                value  = getattr(super(), name)(*args, **kwargs)
+                if isinstance(value, str):
+                    value = MatchString(value)
+                    value.match = self.match
+                    return value
+                else:
+                    return value
+            return method.__get__(self)
+        else:
+            return super().__getattribute__(name)
+
+    def __setattr__(self, name, value):
+        if name == 'match':
+            if hasattr(self, name) and isinstance(value, str):
+                getattr(self, name).append(value)
+            elif hasattr(self, name) and isinstance(value, list):
+                getattr(self, name).extend(value)
+            elif isinstance(value, str):
+                super().__setattr__(name, [value])
+            elif isinstance(value, list):
+                super().__setattr__(name, value)
+            else:
+                raise TypeError('value must be str or list')
+        else:
+            raise NameError('name must be match')
+
+    def __add__(self, other):
+        if isinstance(other, MatchString):
+            new = MatchString(super().__add__(other))
+            new.match = self.match + other.match
+            return new
+        elif isinstance(other, str):
+            new = MatchString(super().__add__(other))
+            new.match = self.match
+            return new
+        else:
+            raise TypeError('other must be string')
+
+
 
 class AndList(list):
     """
@@ -190,6 +259,28 @@ class RelationalOperand:
         cond = self._make_condition(self.restriction)
         return '' if cond is True else ' WHERE %s' % cond
 
+    def like_clause(self, attr, match, format_match=None):
+        expr = MatchString('%s LIKE ' % attr)
+        if format_match is None:
+            expr.match = '%' + match + '%'
+        else:
+            raise NotImplementedError('format match.')
+        return expr + '%s' %('%' + match + '%')
+
+    def search_clause(self, match, match_fields=None, format_match=None):
+        if match_fields is None:
+            attrs = self.heading.project(self.heading.strings).as_sql.split(',')
+        else:
+            if set(match_fields) - set(self.heading.strings):
+                raise DataJointError("match fields may only be string fields")
+            attrs = self.heading.project(match_fields).as_sql.split(',')
+        expr = MatchString('')
+        for i, attr in enumerate(attrs):
+            expr += self.like_clause(attr, match, format_match)
+            if i != len(attrs)-1:
+                expr += ' OR '
+        return expr
+
     def where_like_clause(self, select_fields=None):
         """Create Where like clasue with or binders
         """
@@ -256,6 +347,10 @@ class RelationalOperand:
                               attributes=attributes, named_attributes=named_attributes)
 
     aggregate = aggr  # aliased name for aggr
+
+    def search(self, match, match_fields=None):
+        restriction = self.search_clause(match, match_fields)
+        return self.restrict(restriction)
 
     def __iand__(self, restriction):
         """
@@ -530,7 +625,7 @@ class RelationalOperand:
             from_=self.from_clause,
             where=self.where_clause)
 
-    def search(self, match, select_fields=None):
+    def search_cursor(self, match, select_fields=None):
         query = 'SELECT {fields} FROM {from_}{where}'.format(
             fields=("DISTINCT " if self.distinct else "") + self.get_select_fields(select_fields),
             from_=self.from_clause,
