@@ -26,7 +26,7 @@ class Fetch:
     def __init__(self, relation):
         self._relation = relation
 
-    def __call__(self, *attrs, offset=None, limit=None, order_by=None, as_dict=False, squeeze=False):
+    def __call__(self, *attrs, offset=None, limit=None, order_by=None, direction=None, as_dict=False, squeeze=False):
         """
         Fetches the query results from the database into an np.array or list of dictionaries and unpacks blob attributes.
 
@@ -56,7 +56,7 @@ class Fetch:
 
         if not attrs:
             # fetch all attributes
-            cur = self._relation.cursor(as_dict=as_dict, limit=limit, offset=offset, order_by=order_by)
+            cur = self._relation.cursor(as_dict=as_dict, limit=limit, offset=offset, order_by=order_by, direction=direction)
             heading = self._relation.heading
             if as_dict:
                 ret = [OrderedDict((name, unpack(d[name], squeeze=squeeze) if heading[name].is_blob else d[name])
@@ -74,7 +74,7 @@ class Fetch:
         else:  # if list of attributes provided
             attributes = [a for a in attrs if not is_key(a)]
             result = self._relation.proj(*attributes).fetch(
-                offset=offset, limit=limit, order_by=order_by, as_dict=False, squeeze=squeeze)
+                offset=offset, limit=limit, order_by=order_by, as_dict=False, squeeze=squeeze, direction=direction)
             return_values = [
                 list(to_dicts(result[self._relation.primary_key]))
                 if is_key(attribute) else result[attribute]

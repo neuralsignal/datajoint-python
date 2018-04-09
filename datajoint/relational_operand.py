@@ -31,75 +31,6 @@ def assert_join_compatibility(rel1, rel2):
         except StopIteration:
             pass
 
-class MatchWrapper(object):
-
-    def __init__(self, string, attr):
-        self.attr = attr
-        self.string = string
-
-    def __call__(self, *args, **kwargs):
-        new = self.attr(*args, **kwargs)
-        if isinstance(new, str):
-            new = MatchString(new)
-        else:
-            return new
-        if not new.match:
-            new.match = self.string.match
-        return new
-
-class MatchString(str):
-    """string with attributes
-    """
-
-    def __init__(self, string):
-        super().__init__()
-        if isinstance(string, MatchString):
-            self.match = string.match
-        else:
-            self.match = []
-
-    def __getattribute__(self, name):
-        if name in dir(str):
-            def method(self, *args, **kwargs):
-                value  = getattr(super(), name)(*args, **kwargs)
-                if isinstance(value, str):
-                    value = MatchString(value)
-                    value.match = self.match
-                    return value
-                else:
-                    return value
-            return method.__get__(self)
-        else:
-            return super().__getattribute__(name)
-
-    def __setattr__(self, name, value):
-        if name == 'match':
-            if hasattr(self, name) and isinstance(value, str):
-                getattr(self, name).append(value)
-            elif hasattr(self, name) and isinstance(value, list):
-                getattr(self, name).extend(value)
-            elif isinstance(value, str):
-                super().__setattr__(name, [value])
-            elif isinstance(value, list):
-                super().__setattr__(name, value)
-            else:
-                raise TypeError('value must be str or list')
-        else:
-            raise NameError('name must be match')
-
-    def __add__(self, other):
-        if isinstance(other, MatchString):
-            new = MatchString(super().__add__(other))
-            new.match = self.match + other.match
-            return new
-        elif isinstance(other, str):
-            new = MatchString(super().__add__(other))
-            new.match = self.match
-            return new
-        else:
-            raise TypeError('other must be string')
-
-
 
 class AndList(list):
     """
@@ -133,6 +64,7 @@ class RelationalOperand:
     def __init__(self, arg=None):
         if arg is None:  # initialize
             # initialize
+            self._format_args = AndList()
             self._restriction = AndList()
             self._distinct = False
             self._heading = None
@@ -141,6 +73,7 @@ class RelationalOperand:
             self._restriction = AndList(arg._restriction)
             self._distinct = arg.distinct
             self._heading = arg._heading
+            self._format_args = AndList(arg._format_args)
 
     @classmethod
     def create(cls):  # pragma: no cover
@@ -260,12 +193,13 @@ class RelationalOperand:
         return '' if cond is True else ' WHERE %s' % cond
 
     def like_clause(self, attr, match, format_match=None):
-        expr = MatchString('%s LIKE ' % attr)
+        expr = '%s LIKE ' % attr
         if format_match is None:
-            expr.match = '%' + match + '%'
+            self._format_args.append('%' + match + '%')
         else:
             raise NotImplementedError('format match.')
-        return expr + '%s' %('%' + match + '%')
+        expr += "%s"
+        return expr
 
     def search_clause(self, match, match_fields=None, format_match=None):
         if match_fields is None:
@@ -274,30 +208,8 @@ class RelationalOperand:
             if set(match_fields) - set(self.heading.strings):
                 raise DataJointError("match fields may only be string fields")
             attrs = self.heading.project(match_fields).as_sql.split(',')
-        expr = MatchString('')
-        for i, attr in enumerate(attrs):
-            expr += self.like_clause(attr, match, format_match)
-            if i != len(attrs)-1:
-                expr += ' OR '
-        return expr
-
-    def where_like_clause(self, select_fields=None):
-        """Create Where like clasue with or binders
-        """
-        if select_fields is None:
-            attrs = self.heading.project(self.heading.strings).as_sql.split(',')
-        else:
-            attrs = self.heading.project(self.heading.strings).as_sql.split(',')
-        attr_no = len(attrs)
-        self._string_attr_no = attr_no
-        expr = ' WHERE ('
-        for i, attr in enumerate(attrs):
-            expr += '%s LIKE ' % attr
-            if i+1 != attr_no:
-                expr += '%s OR '
-            else:
-                expr += '%s);'
-        return expr
+        exprs = [self.like_clause(attr, match, format_match) for attr in attrs]
+        return ' OR '.join(exprs)
 
     def get_select_fields(self, select_fields=None):
         """
@@ -348,8 +260,8 @@ class RelationalOperand:
 
     aggregate = aggr  # aliased name for aggr
 
-    def search(self, match, match_fields=None):
-        restriction = self.search_clause(match, match_fields)
+    def search(self, match, match_fields=None, format_match=None):
+        restriction = self.search_clause(match, match_fields, format_match)
         return self.restrict(restriction)
 
     def __iand__(self, restriction):
@@ -625,13 +537,6 @@ class RelationalOperand:
             from_=self.from_clause,
             where=self.where_clause)
 
-    def search_cursor(self, match, select_fields=None):
-        query = 'SELECT {fields} FROM {from_}{where}'.format(
-            fields=("DISTINCT " if self.distinct else "") + self.get_select_fields(select_fields),
-            from_=self.from_clause,
-            where=self.where_like_clause(select_fields))
-        return self.connection.query(query, tuple(['%'+match+'%']*self._string_attr_no))
-
     def __len__(self):
         """
         number of tuples in the relation.
@@ -696,7 +601,7 @@ class RelationalOperand:
                     # The data may have been deleted since the moment the keys were fetched -- move on to next entry.
                     return next(self)
 
-    def cursor(self, offset=0, limit=None, order_by=None, as_dict=False):
+    def cursor(self, offset=0, limit=None, order_by=None, direction='asc', as_dict=False):
         """
         See Relation.fetch() for input description.
         :return: query cursor
@@ -705,11 +610,21 @@ class RelationalOperand:
             raise DataJointError('limit is required when offset is set')
         sql = self.make_sql()
         if order_by is not None:
-            sql += ' ORDER BY ' + ', '.join(order_by)
+            if direction == 'asc':
+                sql += ' ORDER BY ' + ', '.join(order_by)
+            elif direction == 'desc':
+                sql += ' ORDER BY ' + ' DESC, '.join(order_by) + ' DESC'
+            elif isinstance(direction, (tuple, list, dict)) and len(direction) == len(order_by):
+                raise NotImplementedError('list or dict for direction')
+            else:
+                raise TypeError('desc must be list or bool')
         if limit is not None:
             sql += ' LIMIT %d' % limit + (' OFFSET %d' % offset if offset else "")
         logger.debug(sql)
-        return self.connection.query(sql, as_dict=as_dict)
+        if self._format_args:
+            return self.connection.query(sql, tuple(self._format_args), as_dict=as_dict)
+        else:
+            return self.connection.query(sql, as_dict=as_dict)
 
 
 class Not:
@@ -742,6 +657,7 @@ class Join(RelationalOperand):
         if inspect.isclass(arg2) and issubclass(arg2, RelationalOperand):
             arg2 = arg2()   # instantiate if joining with a class
         assert_join_compatibility(arg1, arg2)
+        obj._format_args = arg1._format_args + arg2._format_args
         if arg1.connection != arg2.connection:
             raise DataJointError("Cannot join relations from different connections.")
         obj._connection = arg1.connection
@@ -799,6 +715,7 @@ class Union(RelationalOperand):
         if any(not v.in_key for v in arg1.heading.attributes.values()) or \
                 all(not v.in_key for v in arg2.heading.attributes.values()):
             raise DataJointError('Union arguments must not have any secondary attributes.')
+        obj._format_args = arg1._format_args + arg2._format_args
         obj._connection = arg1.connection
         obj._heading = arg1.heading
         obj._arg1 = arg1
@@ -848,6 +765,7 @@ class Projection(RelationalOperand):
         obj._connection = arg.connection
         named_attributes = {k: v.strip() for k, v in named_attributes.items()}  # clean up values
         obj._distinct = arg.distinct
+        obj._format_args = arg._format_args
         if include_primary_key:  # include primary key of relation
             attributes = (list(a for a in arg.primary_key if a not in named_attributes.values()) +
                           list(a for a in attributes if a not in arg.primary_key))
@@ -906,6 +824,7 @@ class GroupBy(RelationalOperand):
             group = group()   # instantiate if a class
         assert_join_compatibility(arg, group)
         obj = cls()
+        obj._format_args = arg._format_args #+ group._format_args
         obj._keep_all_rows = keep_all_rows
         if not (set(group.primary_key) - set(arg.primary_key) or set(group.primary_key) == set(arg.primary_key)):
             raise DataJointError(
@@ -945,6 +864,8 @@ class Subquery(RelationalOperand):
         if arg is not None:
             # copy constructor
             assert isinstance(arg, Subquery)
+            if hasattr(arg, '_referenced_full_table_name'):
+                self._referenced_full_table_name = arg._referenced_full_table_name
             self._connection = arg.connection
             self._heading = arg.heading
             self._arg = arg._arg
@@ -955,8 +876,12 @@ class Subquery(RelationalOperand):
         construct a subquery from arg
         """
         obj = cls()
+        if hasattr(arg, 'full_table_name'):
+            obj._referenced_full_table_name = arg.full_table_name
+        obj._format_args = arg._format_args
         obj._connection = arg.connection
         obj._heading = arg.heading.make_subquery_heading()
+        obj._format_args = arg._format_args
         obj._arg = arg
         return obj
 

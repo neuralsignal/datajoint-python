@@ -20,6 +20,25 @@ from . import __version__ as version
 
 logger = logging.getLogger(__name__)
 
+def superjoin(rels, columns=None, restrictions={}):
+    """Return a joined relation with applied restrictions
+    """
+    for n, rel in enumerate(rels):
+        if columns is None:
+            to_proj = rel.heading.names
+        else:
+            to_proj = [attr for attr in rel.heading if attr in columns]
+        if n == 0:
+            rel_proj = (rel & restrictions).proj(*to_proj)
+        else:
+            to_proj = [
+                    attr for attr in to_proj
+                    if not attr in
+                    (set(rel.heading.dependent_attributes) & set(rel_proj.heading.dependent_attributes))
+                    ]
+            rel_proj *= (rel & restrictions).proj(*to_proj)
+
+    return rel_proj
 
 class BaseRelation(RelationalOperand):
     """
@@ -343,6 +362,12 @@ class BaseRelation(RelationalOperand):
                         placeholder, value = 'NULL', None
                     else:
                         placeholder, value = '%s', (str(int(value) if isinstance(value, bool) else value))
+                elif heading[name].type == 'timestamp' or heading[name].type == 'date':
+                    if value is None or value == '':
+                        placeholder, value = 'NULL', None
+                    else:
+                        value = str(value)
+                        placeholder = '%s'
                 else:
                     if value is None or value == '':
                         placeholder, value = 'NULL', None
@@ -430,7 +455,7 @@ class BaseRelation(RelationalOperand):
         If this table has populated dependent tables, this will fail.
         """
         query = 'DELETE FROM ' + self.full_table_name + self.where_clause
-        self.connection.query(query)
+        self.connection.query(query, tuple(self._format_args))
         count = self.connection.query("SELECT ROW_COUNT()").fetchone()[0] if get_count else None
         self._log(query[:255])
         return count
@@ -661,7 +686,8 @@ class BaseRelation(RelationalOperand):
             attrname=attrname,
             placeholder=placeholder,
             where_clause=self.where_clause)
-        self.connection.query(command, args=(value, ) if value is not None else ())
+
+        self.connection.query(command, args=tuple([value]+self._format_args) if value is not None else tuple(self._format_args))
 
     def update(self, update_dict):
         """update using a dictionary
@@ -756,6 +782,7 @@ class BaseRelation(RelationalOperand):
         return table_dict
 
     _part_tables = None
+    #TODO better way to identifiy part tables
     def part_tables(self, graph=None):
         """return part table classes as list.
         It will not work with aliased part tables.
@@ -772,7 +799,7 @@ class BaseRelation(RelationalOperand):
             other_table_name = other_table_name.replace('`', '')
             if other_table_name == self_table_name:
                 continue
-            elif self_table_name in other_table_name:
+            elif ('__' in other_table_name[1:]) and (self_table_name in other_table_name):
                 part_name = other_table_name.replace(self_table_name, '')
                 part_tables_list.append(getattr(self, to_camel_case(part_name)))
         self._part_tables = part_tables_list
@@ -834,6 +861,7 @@ class BaseRelation(RelationalOperand):
 
     _child_tables = None
     _child_tables_settings = None
+    #TODO better separation of part and child tables
     def child_tables(self, graph=None, only_primary=True, exclude_tables=[]):
         """return child tables as list, excluding part tables, and aliased child tables.
         """
@@ -855,11 +883,11 @@ class BaseRelation(RelationalOperand):
         for other_table_name, info_dict in children_dict.items():
             full_table_name = other_table_name
             other_table_name = other_table_name.replace('`', '')
-            if full_table_name in exclude_tables:
+            if ('__' in other_table_name[1:]) and (self_table_name in other_table_name):
                 continue
-            if other_table_name == self_table_name:
+            elif full_table_name in exclude_tables:
                 continue
-            elif self_table_name in other_table_name:
+            elif other_table_name == self_table_name:
                 continue
             elif info_dict['aliased']:
                 continue
@@ -939,6 +967,7 @@ class BaseRelation(RelationalOperand):
             primary keys joined together.
         """
         #TODO restriction columns should also be checked for
+        #TODO non-master table
         def remove_column_helper(columns, proj_set):
             for iproj in proj_set:
                 columns.remove(iproj)
@@ -1296,6 +1325,13 @@ class FreeRelation(BaseRelation):
     specified by full_table_name.
     :param arg:  a dj.Connection or a dj.FreeRelation
     """
+
+    @property
+    def special_attributes(self):
+        try:
+            return super().special_attributes
+        except:
+            return None
 
     def __init__(self, arg, full_table_name=None):
         super().__init__()

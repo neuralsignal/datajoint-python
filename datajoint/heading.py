@@ -76,6 +76,10 @@ class Heading:
         return [k for k, v in self.attributes.items() if not v.nullable]
 
     @property
+    def required_fields(self):
+        return [k for k, v in self.attributes.items() if (not v.nullable) and (v.default is None)]
+
+    @property
     def json_fields(self):
         return [k for k, v in self.attributes.items() if v.is_jsonstring]
 
@@ -137,6 +141,10 @@ class Heading:
         return any(e.autoincrement for e in self.attributes.values())
 
     @property
+    def autoincrements(self):
+        return [k for k, v in self.attributes.items()  if v.autoincrement]
+
+    @property
     def as_dtype(self):
         """
         represent the heading as a numpy dtype
@@ -157,7 +165,7 @@ class Heading:
     def __iter__(self):
         return iter(self.attributes)
 
-    def init_from_database(self, conn, database, table_name, special_attributes):
+    def init_from_database(self, conn, database, table_name, special_attributes=None):
         """
         initialize heading from a database table.  The table must exist already.
         """
@@ -219,10 +227,15 @@ class Heading:
             if attr['is_external']:
                 attr['comment'] = ':'.join(split_comment[2:])
                 attr['type'] = split_comment[1]
-            # process special attributes
-            attr['is_jsonstring'] = special_attributes[attr['name']] == 'jsonstring'
-            attr['is_liststring'] = special_attributes[attr['name']] == 'liststring'
-            attr['is_evalenum'] = special_attributes[attr['name']] == 'evalenum'
+            # process special attributes - will not work for schemas not imported
+            if special_attributes is not None:
+                attr['is_jsonstring'] = special_attributes[attr['name']] == 'jsonstring'
+                attr['is_liststring'] = special_attributes[attr['name']] == 'liststring'
+                attr['is_evalenum'] = special_attributes[attr['name']] == 'evalenum'
+            else:
+                attr['is_jsonstring'] = False
+                attr['is_liststring'] = False
+                attr['is_evalenum'] = False
             #
             attr['nullable'] = (attr['nullable'] == 'YES')
             attr['in_key'] = (attr['in_key'] == 'PRI')
