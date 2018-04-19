@@ -475,16 +475,17 @@ class BaseRelation(RelationalOperand):
                                  'Set dj.config["safemode"] = False or complete the ongoing transaction first.')
         graph = self.connection.dependencies
         graph.load()
-        delete_list = collections.OrderedDict()
-        for table in graph.descendants(self.full_table_name):
-            if not table.isdigit():
-                delete_list[table] = FreeRelation(self.connection, table)
-            else:
-                raise DataJointError('Cascading deletes across renamed foreign keys is not supported.  See issue #300.')
-                parent, edge = next(iter(graph.parents(table).items()))
-                delete_list[table] = FreeRelation(self.connection, parent).proj(
-                    **{new_name: old_name
-                       for new_name, old_name in edge['attr_map'].items() if new_name != old_name})
+        delete_list, rename_list = self.dependents(graph=graph, no_rename=True)
+        #delete_list = collections.OrderedDict()
+        #for table in graph.descendants(self.full_table_name):
+        #    if not table.isdigit():
+        #        delete_list[table] = FreeRelation(self.connection, table)
+        #    else:
+        #        raise DataJointError('Cascading deletes across renamed foreign keys is not supported.  See issue #300.')
+        #        parent, edge = next(iter(graph.parents(table).items()))
+        #        delete_list[table] = FreeRelation(self.connection, parent).proj(
+        #            **{new_name: old_name
+        #               for new_name, old_name in edge['attr_map'].items() if new_name != old_name})
 
         # construct restrictions for each relation
         restrict_by_me = set()
@@ -510,8 +511,40 @@ class BaseRelation(RelationalOperand):
         # apply restrictions
         for name, r in delete_list.items():
             if restrictions[name]:  # do not restrict by an empty list
-                r.restrict([r.proj() if isinstance(r, RelationalOperand) else r
-                            for r in restrictions[name]])
+                rename_proj = rename_list.get(name, {})
+                restriction = []
+                for rel in restrictions[name]:
+                    if isinstance(rel, RelationalOperand):
+                        if set(rename_proj.values()) & set(rel.heading.primary_key):
+                            r_temp = pd.DataFrame(rel.proj().fetch())
+                            drop_columns = set()
+                            for k, v in rename_proj.items():
+                                if v in r_temp.columns:
+                                    r_temp[k] = r_temp[v]
+                                    drop_columns.add(v)
+                            r_temp = r_temp.drop(list(drop_columns), axis=1)
+                            restriction.append(r_temp.to_dict('records'))
+                        else:
+                            restriction.append(rel.proj())
+                    elif isinstance(rel, dict):
+                        for v in set(rename_proj.values()) & set(rel):
+                            for k, value in rename_proj.items():
+                                if v == value:
+                                    rel[k] = rel[v]
+                        restriction.append(rel)
+                    elif isinstance(rel, (np.ndarray, list)):
+                        r_temp = pd.DataFrame(rel)
+                        drop_columns = set()
+                        for k, v in rename_proj.items():
+                            if v in r_temp.columns:
+                                r_temp[k] = r_temp[v]
+                                drop_columns.add(v)
+                        r_temp = r_temp.drop(list(drop_columns), axis=1)
+                        restriction.append(r_temp.to_dict('records'))
+                    else:
+                        raise TypeError('Error in restriction type for delete -- Bug')
+                #
+                r.restrict([restriction])
         if safe:
             print('About to delete:')
 
@@ -756,12 +789,13 @@ class BaseRelation(RelationalOperand):
         #
         raise DataJointError(f'{full_table_name} not in context of {self.full_table_name}')
 
-    def dependents(self, skip_aliased=False, graph=None, as_free=True):
+    def dependents(self, skip_aliased=False, graph=None, as_free=True, no_rename=False):
         """Return dependents of table
         """
         if graph is None:
             graph = self.connection.dependencies
             graph.load()
+        rename_dict = OrderedDict()
         table_dict = OrderedDict()
         for table in graph.descendants(self.full_table_name):
             if not table.isdigit() and table not in table_dict:
@@ -775,14 +809,28 @@ class BaseRelation(RelationalOperand):
                     table_ = FreeRelation(self.connection, child)
                 else:
                     table_ = self.get_table_class(child)
-                rename_proj = {
-                    old_name : new_name
-                    for new_name, old_name in edge['attr_map'].items()
-                    if new_name != old_name
-                }
-                to_proj = set(table_.heading) - set(rename_proj.values())
-                table_dict[table] = table_.proj(*to_proj, **rename_proj)
-        return table_dict
+
+                #
+                if no_rename:
+                    rename_proj = {
+                        new_name : old_name
+                        for new_name, old_name in edge['attr_map'].items()
+                        if new_name != old_name
+                    }
+                    table_dict[table] = table_
+                    rename_dict[table] = rename_proj
+                else:
+                    rename_proj = {
+                        old_name : new_name
+                        for new_name, old_name in edge['attr_map'].items()
+                        if new_name != old_name
+                    }
+                    to_proj = set(table_.heading) - set(rename_proj.values())
+                    table_dict[table] = table_.proj(*to_proj, **rename_proj)
+        if no_rename:
+            return table_dict, rename_dict
+        else:
+            return table_dict
 
     _part_tables = None
     #TODO better way to identifiy part tables
