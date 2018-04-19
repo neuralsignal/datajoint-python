@@ -324,11 +324,11 @@ class BaseRelation(RelationalOperand):
                         if not isinstance(eval_value, dict):
                             raise DataJointError(f'jsonstring not dict, but {type(eval_value)}')
                         if set(eval_value) & set(heading):
-                            raise DataJointError('jsonstring contains values in heading.')
+                            raise DataJointError('jsonstring contains keys that are also in the heading.')
                     elif isinstance(value, dict):
                         placeholder = '%s'
                         if set(value) & set(heading):
-                            raise DataJointError('jsonstring contains values in heading.')
+                            raise DataJointError('jsonstring contains keys that are also in the heading.')
                         value = str(value)
                     else:
                         raise DataJointError(f'jsonstring attribute wrong type {type(value)}')

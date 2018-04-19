@@ -8,7 +8,8 @@ from .base_relation import BaseRelation
 from .declare import STORE_HASH_LENGTH, HASH_DATA_TYPE
 from . import s3
 from .utils import safe_write
-
+from numpy.lib.format import open_memmap
+from warnings import warn
 
 class ExternalTable(BaseRelation):
     """
@@ -47,7 +48,14 @@ class ExternalTable(BaseRelation):
         put an object in external store
         """
         spec = self._get_store_spec(store)
-        if np_first:
+        is_memmap = False
+        if isinstance(obj, np.memmap):
+            if store[len('external-'):]:
+                raise DataJointError('numpy save only works with `external` folder.')
+            blob = obj.tostring()
+            blob_hash = long_hash(blob) + '.npy'
+            is_memmap = True
+        elif np_first:
             if isinstance(obj, np.ndarray):
                 if store[len('external-'):]:
                     raise DataJointError('numpy save only works with `external` folder.')
@@ -68,6 +76,7 @@ class ExternalTable(BaseRelation):
                     blob_hash = long_hash(blob) + '.npy'
                 else:
                     raise e
+        ###
         if spec['protocol'] == 'file':
             folder = os.path.join(spec['location'], self.database)
             if not os.path.exists(folder):
@@ -75,10 +84,20 @@ class ExternalTable(BaseRelation):
             full_path = os.path.join(folder, blob_hash)
             if not os.path.isfile(full_path):
                 if full_path.endswith('.npy'):
-                    try:
-                        np.save(full_path, obj, allow_pickle=False)
-                    except ValueError:
-                        np.save(full_path, obj, allow_pickle=True)
+                    if is_memmap:
+                        #memmap object will not be flushed beforehand
+                        #TODO test memmapping
+                        warn('memmapping object not tested.')
+                        new_obj = open_memmap(full_path, mode='w+', dtype=obj.dtype, shape=obj.shape)
+                        new_obj[:] = obj[:]
+                        new_obj.flush()
+                        del(new_obj)
+                        del(obj)
+                    else:
+                        try:
+                            np.save(full_path, obj, allow_pickle=False)
+                        except ValueError:
+                            np.save(full_path, obj, allow_pickle=True)
                 else:
                     try:
                         safe_write(full_path, blob)
