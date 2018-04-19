@@ -236,7 +236,10 @@ class BaseRelation(RelationalOperand):
         """
         self.insert((row,), **kwargs)
 
-    def insert(self, rows, replace=False, skip_duplicates=False, ignore_extra_fields=False, ignore_errors=False):
+    def insert(self, rows, replace=False,
+            skip_duplicates=False, ignore_extra_fields=False, ignore_errors=False,
+            np_first=False
+            ):
         """
         Insert a collection of rows.
 
@@ -303,7 +306,7 @@ class BaseRelation(RelationalOperand):
                     if value is None:
                         placeholder, value = 'NULL', None
                     else:
-                        placeholder, value = '%s', self.external_table.put(heading[name].type, value)
+                        placeholder, value = '%s', self.external_table.put(heading[name].type, value, np_first=np_first)
                 elif heading[name].is_blob:
                     if value is None:
                         placeholder, value = 'NULL', None
@@ -641,7 +644,7 @@ class BaseRelation(RelationalOperand):
             print(definition)
         return definition
 
-    def _update(self, attrname, value=None):
+    def _update(self, attrname, value=None, np_first=False):
         """
             Updates a field in an existing tuple. This is not a datajoyous operation and should not be used
             routinely. Relational database maintain referential integrity on the level of a tuple. Therefore,
@@ -668,7 +671,7 @@ class BaseRelation(RelationalOperand):
         attr = self.heading[attrname]
 
         if attr.is_external:
-            placeholder, value = '%s', self.external_table.put(attr.type, value)
+            placeholder, value = '%s', self.external_table.put(attr.type, value, np_first=np_first)
         elif attr.is_blob:
             value = pack(value)
             placeholder = '%s'

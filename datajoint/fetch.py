@@ -26,7 +26,8 @@ class Fetch:
     def __init__(self, relation):
         self._relation = relation
 
-    def __call__(self, *attrs, offset=None, limit=None, order_by=None, direction=None, as_dict=False, squeeze=False):
+    def __call__(self, *attrs, offset=None, limit=None, order_by=None,
+            direction=None, as_dict=False, squeeze=False, mmap_mode=None):
         """
         Fetches the query results from the database into an np.array or list of dictionaries and unpacks blob attributes.
 
@@ -59,6 +60,7 @@ class Fetch:
             cur = self._relation.cursor(as_dict=as_dict, limit=limit, offset=offset, order_by=order_by, direction=direction)
             heading = self._relation.heading
             if as_dict:
+                #TODO does not work with external files
                 ret = [OrderedDict((name, unpack(d[name], squeeze=squeeze) if heading[name].is_blob else d[name])
                                    for name in heading.names)
                        for d in cur.fetchall()]
@@ -68,7 +70,9 @@ class Fetch:
                 for name in heading:
                     if heading[name].is_external:
                         external_table = self._relation.connection.schemas[heading[name].database].external_table
-                        ret[name] = list(map(external_table.get, ret[name]))
+                        def get_external(_hash):
+                            return external_table.get(_hash, mmap_mode=mmap_mode)
+                        ret[name] = list(map(get_external, ret[name]))
                     elif heading[name].is_blob:
                         ret[name] = list(map(partial(unpack, squeeze=squeeze), ret[name]))
         else:  # if list of attributes provided
@@ -102,7 +106,7 @@ class Fetch1:
     def __init__(self, relation):
         self._relation = relation
 
-    def __call__(self, *attrs, squeeze=False):
+    def __call__(self, *attrs, squeeze=False, mmap_mode=None):
         """
         Fetches the query results from the database when the query is known to contain only one entry.
 
@@ -127,7 +131,7 @@ class Fetch1:
                 raise DataJointError('fetch1 should only be used for relations with exactly one tuple')
 
             def get_external(attr, _hash):
-                return self._relation.connection.schemas[attr.database].external_table.get(_hash)
+                return self._relation.connection.schemas[attr.database].external_table.get(_hash, mmap_mode=mmap_mode)
 
             ret = OrderedDict((name, get_external(heading[name], ret[name])) if heading[name].is_external
                               else (name, unpack(ret[name], squeeze=squeeze) if heading[name].is_blob else ret[name])

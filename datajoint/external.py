@@ -42,24 +42,36 @@ class ExternalTable(BaseRelation):
     def table_name(self):
         return '~external'
 
-    def put(self, store, obj):
+    def put(self, store, obj, np_first=False):
         """
         put an object in external store
         """
         spec = self._get_store_spec(store)
-        try:
-            blob = pack(obj)
-            blob_hash = long_hash(blob) + store[len('external-'):]
-        except DataJointError as e:
-            if store[len('external-'):]:
-                raise e
+        if np_first:
             if isinstance(obj, np.ndarray):
+                if store[len('external-'):]:
+                    raise DataJointError('numpy save only works with `external` folder.')
                 blob = obj.tostring()
                 blob_hash = long_hash(blob) + '.npy'
             else:
-                raise e
+                blob = pack(obj)
+                blob_hash = long_hash(blob) + store[len('external-'):]
+        else:
+            try:
+                blob = pack(obj)
+                blob_hash = long_hash(blob) + store[len('external-'):]
+            except DataJointError as e:
+                if store[len('external-'):]:
+                    raise e
+                if isinstance(obj, np.ndarray):
+                    blob = obj.tostring()
+                    blob_hash = long_hash(blob) + '.npy'
+                else:
+                    raise e
         if spec['protocol'] == 'file':
             folder = os.path.join(spec['location'], self.database)
+            if not os.path.exists(folder):
+                os.mkdir(folder)
             full_path = os.path.join(folder, blob_hash)
             if not os.path.isfile(full_path):
                 if full_path.endswith('.npy'):
@@ -88,7 +100,7 @@ class ExternalTable(BaseRelation):
                 size=len(blob)))
         return blob_hash
 
-    def get(self, blob_hash):
+    def get(self, blob_hash, mmap_mode=None):
         """
         get an object from external store.
         Does not need to check whether it's in the table.
@@ -114,7 +126,7 @@ class ExternalTable(BaseRelation):
                 pass
         elif cache_folder and np_store:
             try:
-                return np.load(blob_hash)
+                return np.load(os.path.join(cache_folder, blob_hash), mmap_mode=mmap_mode)
             except FileNotFoundError:
                 pass
 
@@ -123,7 +135,17 @@ class ExternalTable(BaseRelation):
             if spec['protocol'] == 'file':
                 full_path = os.path.join(spec['location'], self.database, blob_hash)
                 if np_store:
-                    return np.load(full_path)
+                    obj = np.load(full_path, mmap_mode=mmap_mode)
+                    ###TODO untested cache folder saving for numpy arrays
+                    if cache_folder:
+                        if not os.path.exists(cache_folder):
+                            os.makedirs(cache_folder)
+                        try:
+                            np.save(os.path.join(cache_folder, blob_hash), obj, allow_pickle=False)
+                        except ValueError:
+                            np.save(os.path.join(cache_folder, blob_hash), obj, allow_pickle=True)
+                    ###
+                    return obj
                 try:
                     with open(full_path, 'rb') as f:
                         blob = f.read()
