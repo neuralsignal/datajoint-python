@@ -6,7 +6,6 @@ from .hash import long_hash
 from .blob import pack, unpack
 from .base_relation import BaseRelation
 from .declare import STORE_HASH_LENGTH, HASH_DATA_TYPE
-from . import s3
 from .utils import safe_write
 from numpy.lib.format import open_memmap
 from warnings import warn
@@ -43,28 +42,24 @@ class ExternalTable(BaseRelation):
     def table_name(self):
         return '~external'
 
-    def put(self, store, obj, np_first=False):
+    def put(self, store, obj, np_first=False, remove_mmap=False):
         """
         put an object in external store
         """
         spec = self._get_store_spec(store)
-        if isinstance(obj, str):
-            folder = os.path.join(spec['location'], self.database)
-            if folder in obj:
-                datafile = obj
-            else:
-                datafile = os.path.join(folder, obj)
-            if os.path.exists(datafile):
-                return os.path.split(datafile)[-1]
-            else:
-                raise DataJointError('If str is passed to external, file must exist already')
-        ###
         is_memmap = False
-        if isinstance(obj, np.memmap):
+        if isinstance(obj, str):
+            blob_hash = os.path.split(obj)[-1]
+            try:
+                blob_size = (self & {'hash':blob_hash}).fetch1()['size']
+            except DataJointError:
+                raise DataJointError('If obj is str, then it the hash must exist in external')
+        elif isinstance(obj, np.memmap):
             if store[len('external-'):]:
                 raise DataJointError('numpy save only works with `external` folder.')
             #TODO maybe inefficient blob creation
             blob = obj.tostring()
+            blob_size = len(blob)
             blob_hash = long_hash(blob) + '.npy'
             is_memmap = True
         elif np_first:
@@ -76,6 +71,7 @@ class ExternalTable(BaseRelation):
             else:
                 blob = pack(obj)
                 blob_hash = long_hash(blob) + store[len('external-'):]
+            blob_size = len(blob)
         else:
             try:
                 blob = pack(obj)
@@ -88,42 +84,38 @@ class ExternalTable(BaseRelation):
                     blob_hash = long_hash(blob) + '.npy'
                 else:
                     raise e
-        ###
-        if spec['protocol'] == 'file':
-            folder = os.path.join(spec['location'], self.database)
-            if not os.path.exists(folder):
-                os.mkdir(folder)
-            full_path = os.path.join(folder, blob_hash)
-            if not os.path.isfile(full_path):
-                if full_path.endswith('.npy'):
-                    if is_memmap:
-                        #memmap object will not be flushed beforehand
-                        #TODO test memmapping
-                        if full_path == obj.filename:
-                            obj.flush()
-                        else:
-                            warn('memmapping object not tested.')
-                            new_obj = open_memmap(full_path, mode='w+', dtype=obj.dtype, shape=obj.shape)
-                            new_obj[:] = obj[:]
-                            new_obj.flush()
-                            del(new_obj)
-                        del(obj)
-                    else:
-                        try:
-                            np.save(full_path, obj, allow_pickle=False)
-                        except ValueError:
-                            np.save(full_path, obj, allow_pickle=True)
-                else:
-                    try:
-                        safe_write(full_path, blob)
-                    except FileNotFoundError:
-                        os.makedirs(folder)
-                        safe_write(full_path, blob)
-        elif spec['protocol'] == 's3':
-            s3.Folder(database=self.database, **spec).put(blob_hash, blob)
-        else:
+            blob_size = len(blob)
+        #
+        #Only allow file protocol for now
+        if not spec['protocol'] == 'file':
             raise DataJointError('Unknown external storage protocol {protocol} for {store}'.format(
                 store=store, protocol=spec['protocol']))
+
+        folder = os.path.join(spec['location'], self.database)
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        full_path = os.path.join(folder, blob_hash)
+        ##
+        if not os.path.isfile(full_path):
+            if full_path.endswith('.npy'):
+                if is_memmap:
+                    warn('memmap has not been fully tested')
+                    #memmap object will not be flushed beforehand
+                    filename = obj.filename
+                    new_obj = open_memmap(full_path, mode='w+', dtype=obj.dtype, shape=obj.shape)
+                    new_obj[:] = obj[:]
+                    new_obj.flush()
+                    del(new_obj)
+                    del(obj)
+                    if remove_mmap:
+                        os.remove(filename)
+                else:
+                    try:
+                        np.save(full_path, obj, allow_pickle=False)
+                    except ValueError:
+                        np.save(full_path, obj, allow_pickle=True)
+            else:
+                safe_write(full_path, blob)
 
         # insert tracking info
         self.connection.query(
@@ -131,7 +123,8 @@ class ExternalTable(BaseRelation):
             "ON DUPLICATE KEY UPDATE timestamp=CURRENT_TIMESTAMP".format(
                 tab=self.full_table_name,
                 hash=blob_hash,
-                size=len(blob)))
+                size=blob_size))
+        #return blob_hash for insertion into foreign table
         return blob_hash
 
     def get(self, blob_hash, mmap_mode=None):
@@ -164,45 +157,42 @@ class ExternalTable(BaseRelation):
                 pass
         elif cache_folder and np_store:
             try:
-                return np.load(os.path.join(cache_folder, blob_hash), mmap_mode=mmap_mode)
+                obj = np.load(os.path.join(cache_folder, blob_hash), mmap_mode=mmap_mode)
+                blob = True
             except FileNotFoundError:
                 pass
 
         if blob is None:
             spec = self._get_store_spec(store)
-            if spec['protocol'] == 'file':
-                full_path = os.path.join(spec['location'], self.database, blob_hash)
-                if np_store:
-                    obj = np.load(full_path, mmap_mode=mmap_mode)
-                    ###TODO untested cache folder saving for numpy arrays
-                    if cache_folder:
-                        if not os.path.exists(cache_folder):
-                            os.makedirs(cache_folder)
-                        try:
-                            np.save(os.path.join(cache_folder, blob_hash), obj, allow_pickle=False)
-                        except ValueError:
-                            np.save(os.path.join(cache_folder, blob_hash), obj, allow_pickle=True)
-                    ###
-                    return obj
+            if not spec['protocol'] == 'file':
+                raise DataJointError('Unknown external storage protocol "%s"' % spec['protocol'])
+            ###
+            full_path = os.path.join(spec['location'], self.database, blob_hash)
+            if np_store:
+                obj = np.load(full_path, mmap_mode=mmap_mode)
+            else:
                 try:
                     with open(full_path, 'rb') as f:
                         blob = f.read()
                 except FileNotFoundError:
                     raise DataJointError('Lost access to external blob %s.' % full_path) from None
-            elif spec['protocol'] == 's3':
-                try:
-                    blob = s3.Folder(database=self.database, **spec).get(blob_hash)
-                except TypeError:
-                    raise DataJointError('External store {store} configuration is incomplete.'.format(store=store))
-            else:
-                raise DataJointError('Unknown external storage protocol "%s"' % spec['protocol'])
 
             if cache_folder:
+                warn('untested cache_folder for npy storage')
                 if not os.path.exists(cache_folder):
                     os.makedirs(cache_folder)
-                safe_write(os.path.join(cache_folder, blob_hash), blob)
+                if np_store:
+                    try:
+                        np.save(os.path.join(cache_folder, blob_hash), obj, allow_pickle=False)
+                    except ValueError:
+                        np.save(os.path.join(cache_folder, blob_hash), obj, allow_pickle=True)
+                else:
+                    safe_write(os.path.join(cache_folder, blob_hash), blob)
 
-        return unpack(blob)
+        if np_store:
+            return obj
+        else:
+            return unpack(blob)
 
     @property
     def references(self):
@@ -256,11 +246,8 @@ class ExternalTable(BaseRelation):
             print('Deleting %d unused items from %s' % (len(delete_list), folder), flush=True)
             for f in progress(delete_list):
                 os.remove(os.path.join(folder, f))
-        elif spec['protocol'] == 's3':
-            try:
-                s3.Folder(database=self.database, **spec).clean(self.fetch('hash'))
-            except TypeError:
-                raise DataJointError('External store {store} configuration is incomplete.'.format(store=store))
+        else:
+            raise DataJointError('Unkown external storage protocol')
 
     @staticmethod
     def _get_store_spec(store):
@@ -270,7 +257,7 @@ class ExternalTable(BaseRelation):
             raise DataJointError('Storage {store} is requested but not configured'.format(store=store)) from None
         if 'protocol' not in spec:
             raise DataJointError('Storage {store} config is missing the protocol field'.format(store=store))
-        if spec['protocol'] not in {'file', 's3'}:
+        if spec['protocol'] not in {'file'}:
             raise DataJointError(
                 'Unknown external storage protocol "{protocol}" in "{store}"'.format(store=store, **spec))
         return spec
