@@ -52,6 +52,7 @@ class ExternalTable(BaseRelation):
         if isinstance(obj, np.memmap):
             if store[len('external-'):]:
                 raise DataJointError('numpy save only works with `external` folder.')
+            #TODO maybe inefficient blob creation
             blob = obj.tostring()
             blob_hash = long_hash(blob) + '.npy'
             is_memmap = True
@@ -87,11 +88,14 @@ class ExternalTable(BaseRelation):
                     if is_memmap:
                         #memmap object will not be flushed beforehand
                         #TODO test memmapping
-                        warn('memmapping object not tested.')
-                        new_obj = open_memmap(full_path, mode='w+', dtype=obj.dtype, shape=obj.shape)
-                        new_obj[:] = obj[:]
-                        new_obj.flush()
-                        del(new_obj)
+                        if full_path == obj.filename:
+                            obj.flush()
+                        else:
+                            warn('memmapping object not tested.')
+                            new_obj = open_memmap(full_path, mode='w+', dtype=obj.dtype, shape=obj.shape)
+                            new_obj[:] = obj[:]
+                            new_obj.flush()
+                            del(new_obj)
                         del(obj)
                     else:
                         try:
@@ -124,6 +128,10 @@ class ExternalTable(BaseRelation):
         get an object from external store.
         Does not need to check whether it's in the table.
         """
+        if mmap_mode is True:
+            mmap_mode = 'r'
+        elif mmap_mode not in ['r', 'r+', None]:
+            raise DataJointError('must use r or r+ for mmap_mode if not None.')
         if blob_hash is None:
             return None
         store = blob_hash[STORE_HASH_LENGTH:]
