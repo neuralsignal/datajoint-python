@@ -27,7 +27,8 @@ class Fetch:
         self._relation = relation
 
     def __call__(self, *attrs, offset=None, limit=None, order_by=None,
-            direction=None, as_dict=False, squeeze=False, mmap_mode=None):
+            direction=None, as_dict=False, squeeze=False, mmap_mode=None,
+            skip_external=False):
         """
         Fetches the query results from the database into an np.array or list of dictionaries and unpacks blob attributes.
 
@@ -40,7 +41,13 @@ class Fetch:
         :param squeeze:  if True, remove extra dimensions from arrays
         :return: the contents of the relation in the form of a structured numpy.array or a dict list
         """
-
+        if skip_external is False:
+            skip_external = []
+        elif skip_external is True:
+            skip_external = self._relation.heading
+        elif not hasattr(skip_external, '__iter__'):
+            raise DataJointError('skip external must be boolean or iterable')
+        ###
         # if 'order_by' passed in a string, make into list
         if isinstance(order_by, str):
             order_by = [order_by]
@@ -68,12 +75,12 @@ class Fetch:
                 ret = list(cur.fetchall())
                 ret = np.array(ret, dtype=heading.as_dtype)
                 for name in heading:
-                    if heading[name].is_external:
+                    if heading[name].is_external and name not in skip_external:
                         external_table = self._relation.connection.schemas[heading[name].database].external_table
                         def get_external(_hash):
                             return external_table.get(_hash, mmap_mode=mmap_mode)
                         ret[name] = list(map(get_external, ret[name]))
-                    elif heading[name].is_blob:
+                    elif heading[name].is_blob and not heading[name].is_external:
                         ret[name] = list(map(partial(unpack, squeeze=squeeze), ret[name]))
         else:  # if list of attributes provided
             attributes = [a for a in attrs if not is_key(a)]
@@ -106,7 +113,7 @@ class Fetch1:
     def __init__(self, relation):
         self._relation = relation
 
-    def __call__(self, *attrs, squeeze=False, mmap_mode=None):
+    def __call__(self, *attrs, squeeze=False, mmap_mode=None, skip_external=False):
         """
         Fetches the query results from the database when the query is known to contain only one entry.
 
@@ -123,6 +130,12 @@ class Fetch1:
         """
 
         heading = self._relation.heading
+        if skip_external is False:
+            skip_external = []
+        elif skip_external is True:
+            skip_external = heading
+        elif not hasattr(skip_external, '__iter__'):
+            raise DataJointError('skip external must be boolean or iterable')
 
         if not attrs:  # fetch all attributes, return as ordered dict
             cur = self._relation.cursor(as_dict=True)
@@ -133,8 +146,9 @@ class Fetch1:
             def get_external(attr, _hash):
                 return self._relation.connection.schemas[attr.database].external_table.get(_hash, mmap_mode=mmap_mode)
 
-            ret = OrderedDict((name, get_external(heading[name], ret[name])) if heading[name].is_external
-                              else (name, unpack(ret[name], squeeze=squeeze) if heading[name].is_blob else ret[name])
+            ret = OrderedDict((name, get_external(heading[name], ret[name])) if heading[name].is_external and name not in skip_external
+                              else (name, unpack(ret[name], squeeze=squeeze) if heading[name].is_blob and not heading[name].is_external
+                              else ret[name])
                               for name in heading.names)
 
         else:  # fetch some attributes, return as tuple

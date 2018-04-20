@@ -48,6 +48,17 @@ class ExternalTable(BaseRelation):
         put an object in external store
         """
         spec = self._get_store_spec(store)
+        if isinstance(obj, str):
+            folder = os.path.join(spec['location'], self.database)
+            if folder in obj:
+                datafile = obj
+            else:
+                datafile = os.path.join(folder, obj)
+            if os.path.exists(datafile):
+                return os.path.split(datafile)[-1]
+            else:
+                raise DataJointError('If str is passed to external, file must exist already')
+        ###
         is_memmap = False
         if isinstance(obj, np.memmap):
             if store[len('external-'):]:
