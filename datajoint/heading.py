@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 default_attribute_properties = dict(    # these default values are set in computed attributes
     name=None, type='expression', in_key=False, nullable=False, default=None, comment='calculated attribute',
     autoincrement=False, numeric=None, string=None, is_blob=False, is_external=False, sql_expression=None,
-    database=None, dtype=object, is_jsonstring=False, is_liststring=False, is_evalenum=False)
+    database=None, dtype=object, is_jsonstring=False, is_liststring=False, is_evalenum=False, is_loadstring=False)
 
 
 class Attribute(namedtuple('_Attribute', default_attribute_properties)):
@@ -90,6 +90,10 @@ class Heading:
     @property
     def list_fields(self):
         return [k for k, v in self.attributes.items() if v.is_liststring]
+
+    @property
+    def load_fields(self):
+        return [k for k, v in self.attributes.items() if v.is_loadstring]
 
     @property
     def evalenum_fields(self):
@@ -231,11 +235,13 @@ class Heading:
             if special_attributes is not None:
                 attr['is_jsonstring'] = special_attributes[attr['name']] == 'jsonstring'
                 attr['is_liststring'] = special_attributes[attr['name']] == 'liststring'
+                attr['is_loadstring'] = special_attributes[attr['name']] == 'loadstring'
                 attr['is_evalenum'] = special_attributes[attr['name']] == 'evalenum'
             else:
-                attr['is_jsonstring'] = False
-                attr['is_liststring'] = False
-                attr['is_evalenum'] = False
+                attr['is_jsonstring'] = len(split_comment) >= 3 and split_comment[1].startswith('jsonstring')
+                attr['is_liststring'] = len(split_comment) >= 3 and split_comment[1].startswith('liststring')
+                attr['is_loadstring'] = len(split_comment) >= 3 and split_comment[1].startswith('loadstring')
+                attr['is_evalenum'] = len(split_comment) >= 3 and split_comment[1].startswith('evalenum')
             #
             attr['nullable'] = (attr['nullable'] == 'YES')
             attr['in_key'] = (attr['in_key'] == 'PRI')

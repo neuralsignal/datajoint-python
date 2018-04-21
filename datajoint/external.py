@@ -9,6 +9,7 @@ from .declare import STORE_HASH_LENGTH, HASH_DATA_TYPE
 from .utils import safe_write
 from numpy.lib.format import open_memmap
 from warnings import warn
+import gc
 
 class ExternalTable(BaseRelation):
     """
@@ -99,7 +100,6 @@ class ExternalTable(BaseRelation):
         if not os.path.isfile(full_path):
             if full_path.endswith('.npy'):
                 if is_memmap:
-                    warn('memmap has not been fully tested')
                     #memmap object will not be flushed beforehand
                     filename = obj.filename
                     new_obj = open_memmap(full_path, mode='w+', dtype=obj.dtype, shape=obj.shape)
@@ -109,6 +109,8 @@ class ExternalTable(BaseRelation):
                     del(obj)
                     if remove_mmap:
                         os.remove(filename)
+                    ###
+                    gc.collect()
                 else:
                     try:
                         np.save(full_path, obj, allow_pickle=False)

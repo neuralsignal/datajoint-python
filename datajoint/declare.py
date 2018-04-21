@@ -13,6 +13,9 @@ STORE_HASH_LENGTH = 43
 HASH_DATA_TYPE = 'char(51)'
 JSONSTRING_DATA_TYPE = 'varchar(15000)'
 LISTSTRING_DATA_TYPE = 'varchar(5000)'
+LOADSTRING_DATA_TYPE = 'varchar(10000)'
+LOADSTRING_MUST_KEYS = ('function', 'file')
+LOADSTRING_OPT_KEYS = ('args', 'kwargs')
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +240,7 @@ def add_columns(full_table_name, definition, heading, context):
     # split definition into lines
     definition = re.split(r'\s*\n\s*', definition.strip())
     # check for optional table comment
-    table_comment = definition.pop(0)[1:].strip() if definition[0].startswith('#') else ''
+    #table_comment = definition.pop(0)[1:].strip() if definition[0].startswith('#') else ''
     in_key = True  # parse primary keys
     primary_key = []
     attributes = []
@@ -327,6 +330,7 @@ def compile_attribute(line, in_key, foreign_key_sql):
     is_external = match['type'].startswith('external')
     is_jsonstring = match['type'] == 'jsonstring'
     is_liststring = match['type'] == 'liststring'
+    is_loadstring = match['type'] == 'loadstring'
     is_evalenum = match['type'].startswith('evalenum')
     special_attr = None
     if is_jsonstring:
@@ -345,6 +349,12 @@ def compile_attribute(line, in_key, foreign_key_sql):
         special_attr = 'evalenum'
         match['type'] = match['type'][len('eval'):]
         sql = ('`{name}` {type} {default}' + (' COMMENT ":evalenum:{comment}"' if match['comment'] else '')).format(**match)
+    elif is_loadstring:
+        special_attr = 'loadstring'
+        if in_key:
+            raise DataJointError('Loadstring attributes cannot be primary in:\n%s' % line)
+        sql = '`{name}` {loadstring_type} {default} COMMENT ":{type}:{comment}"'.format(
+            loadstring_type=LOADSTRING_DATA_TYPE, **match)
     elif not is_external:
         sql = ('`{name}` {type} {default}' + (' COMMENT "{comment}"' if match['comment'] else '')).format(**match)
     else:

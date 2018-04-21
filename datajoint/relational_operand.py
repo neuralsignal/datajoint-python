@@ -9,9 +9,33 @@ import decimal
 import pandas as pd
 from . import DataJointError, config
 from .fetch import Fetch, Fetch1
+from importlib import import_module
 
 logger = logging.getLogger(__name__)
 
+def function_converter(function):
+    if isinstance(function, str):
+        module, function = function.rsplit('.', 1)
+        module = import_module(module)
+        function = getattr(module, function)
+    return function
+
+def evaluate(x):
+    if pd.isnull(x):
+        return None
+    else:
+        return eval(x)
+
+def load_eval(x):
+    if pd.isnull(x):
+        return None
+    else:
+        loaddict = eval(x)
+        function = function_converter(loaddict['function'])
+        filename = loaddict['file']
+        args = loaddict.get('args', [])
+        kwargs = loaddict.get('kwargs', {})
+        return function(filename, *args, **kwargs)
 
 def assert_join_compatibility(rel1, rel2):
     """
@@ -359,7 +383,9 @@ class RelationalOperand:
     def fetch(self):
         return Fetch(self)
 
-    def uberfetch1(self, *args, expand_json=False, **kwargs):
+    #TODO move uberfetch into fetch call arguments
+    def uberfetch1(self, *args, expand_json=False,
+            apply_to_attrs=None, kwargs_for_apply={}, **kwargs):
         entry = self.fetch1(*args, **kwargs)
         for json_field in self.heading.json_fields:
             if entry[json_field] is None:
@@ -373,14 +399,19 @@ class RelationalOperand:
             if entry[field] is None:
                 continue
             entry[field] = eval(entry[field])
+        for field in self.heading.load_fields:
+            entry[field] = load_eval(entry[field])
+        #
+        if isinstance(apply_to_attrs, dict):
+            for field, function in apply_to_attrs.items():
+                function = function_converter(function)
+                kwargs = kwargs_for_apply.get(field, {})
+                entry[field] = function(entry[field], **kwargs)
         return entry
 
-    def uberfetch(self, *args, expand_json=False, **kwargs):
-        def evaluate(x):
-            if pd.isnull(x):
-                return None
-            else:
-                return eval(x)
+    def uberfetch(
+            self, *args, expand_json=False,
+            apply_to_attrs=None, kwargs_for_apply={}, **kwargs):
         table = pd.DataFrame(self.fetch(*args, **kwargs))
         for json_field in self.heading.json_fields:
             table[json_field] = table[json_field].apply(evaluate)
@@ -393,6 +424,19 @@ class RelationalOperand:
                 axis=1)
         for field in self.heading.list_fields + self.heading.evalenum_fields:
             table[field] = table[field].apply(evaluate)
+        for field in self.heading.load_fields:
+            table[field] = table[field].apply(load_eval)
+
+        if isinstance(apply_to_attrs, dict):
+            for field, function in apply_to_attrs.items():
+                function = function_converter(function)
+                kwargs = kwargs_for_apply.get(field, {})
+                def applied_function(x):
+                    if x is None or x is np.nan:
+                        return x
+                    else:
+                        return function(x, **kwargs)
+                table[field] = table[field].apply(applied_function)
         return table
 
     def json_restrict(self, key, **kwargs):

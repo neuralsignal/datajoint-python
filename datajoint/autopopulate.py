@@ -5,7 +5,7 @@ import traceback
 import random
 from tqdm import tqdm
 from pymysql import OperationalError
-from .relational_operand import RelationalOperand, AndList, U
+from .relational_operand import RelationalOperand, AndList
 from . import DataJointError
 from .base_relation import FreeRelation
 import signal
@@ -31,6 +31,8 @@ class AutoPopulate:
                 The default value is the join of the parent relations.
                 Users may override to change the granularity or the scope of populate() calls.
         """
+        #if hasattr(self, 'joined_table'):
+        #    self._key_source = self.joined_table
         if self._key_source is None:
             if self.target.full_table_name not in self.connection.dependencies:
                 self.connection.dependencies.load()
@@ -119,7 +121,7 @@ class AutoPopulate:
         elif order == "random":
             random.shuffle(keys)
 
-        call_count = 0 
+        call_count = 0
         logger.info('Found %d keys to populate' % len(keys))
 
         make = self._make_tuples if hasattr(self, '_make_tuples') else self.make

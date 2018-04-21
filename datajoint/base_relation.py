@@ -6,12 +6,13 @@ import platform
 import numpy as np
 import pandas as pd
 import pymysql
+import os
 import logging
 import warnings
 from pymysql import OperationalError, InternalError, IntegrityError
 from . import config, DataJointError
-from .declare import declare, add_columns, find_special_attributes
-from .relational_operand import RelationalOperand, Subquery
+from .declare import declare, add_columns, find_special_attributes, LOADSTRING_MUST_KEYS, LOADSTRING_OPT_KEYS
+from .relational_operand import RelationalOperand, Subquery, function_converter
 from .blob import pack
 from .utils import user_choice, to_camel_case
 from .heading import Heading
@@ -332,6 +333,48 @@ class BaseRelation(RelationalOperand):
                         value = str(value)
                     else:
                         raise DataJointError(f'jsonstring attribute wrong type {type(value)}')
+                elif heading[name].is_loadstring:
+                    if value is None:
+                        placeholder, value = 'NULL', None
+                    elif isinstance(value, (str, dict)):
+                        placeholder = '%s'
+                        if isinstance(value, str):
+                            try:
+                                eval_value = eval(value)
+                                assert isinstance(eval_value, dict), 'loadstring must be dict'
+                            except:
+                                raise DataJointError(f'cannot evaluate loadstring {value}')
+                        else:
+                            eval_value = value
+                            value = str(value)
+                        #check if loadstring has necessary keys
+                        if set(LOADSTRING_MUST_KEYS) - set(eval_value):
+                            raise DataJointError(f'must provide keys {LOADSTRING_MUST_KEYS} for loadstring')
+                        if set(eval_value) - (set(LOADSTRING_MUST_KEYS) | set(LOADSTRING_OPT_KEYS)):
+                            raise DataJointError(f'provided unknown keys to loadstring')
+                        if isinstance(eval_value['file'], str):
+                            assert os.path.isfile(eval_value['file']), 'filepath for loadstring does not exist'
+                        elif isinstance(eval_value['file'], list):
+                            assert all([os.path.isfile(f) for f in eval_value['file']]), \
+                                    'at least one filepath in loadstring does not exit'
+                        else:
+                            raise DataJointError('file value in loadstring must be str or list')
+                        if not isinstance(eval_value['function'], str):
+                            raise DataJointError('function must be parsed as a str in loadstring')
+                        else:
+                            try:
+                                function_converter(eval_value['function'])
+                            except:
+                                raise DataJointError(f'function {eval_value["function"]} could not be imported for loadstring')
+                        args = eval_value.get('args', [])
+                        kwargs = eval_value.get('kwargs', {})
+                        if not isinstance(args, (list, tuple)):
+                            raise DataJointError('loadstring args key is not a list or tuple')
+                        if not isinstance(kwargs, dict):
+                            raise DataJointError('loadstring kwargs key must be a dict')
+
+                    else:
+                        raise DataJointError(f'loadstring attributes wrong type {type(value)}')
                 elif heading[name].is_liststring:
                     if value is None:
                         placeholder, value = 'NULL', None
