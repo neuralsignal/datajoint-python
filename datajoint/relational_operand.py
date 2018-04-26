@@ -622,6 +622,26 @@ class RelationalOperand:
                     return n
         return IterRows(self)
 
+
+    def pop(self, random=False, **fetch_kwargs):
+        #
+        if random:
+            return (self & self.random_pop_key).fetch1(**fetch_kwargs)
+        else:
+            return (self & self.next_pop_key).fetch1(**fetch_kwargs)
+
+    @property
+    def random_pop_key(self):
+        if not hasattr(self, 'pop_keys'):
+            self.pop_keys = self.proj().fetch(as_dict=True)
+        return self.pop_keys.pop(np.random.randint(len(self.pop_keys)))
+
+    @property
+    def next_pop_key(self):
+        if not hasattr(self, 'pop_keys'):
+            self.pop_keys = self.proj().fetch(as_dict=True)
+        return self.pop_keys.pop(0)
+
     def __iter__(self):
         self._iter_only_key = all(v.in_key for v in self.heading.attributes.values())
         self._iter_keys = self.fetch('KEY')

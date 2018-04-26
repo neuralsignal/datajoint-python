@@ -386,7 +386,9 @@ class BaseRelation(RelationalOperand):
                             raise DataJointError(f'Cannot evaluate jsonstring {value}')
                         if not isinstance(eval_value, list):
                             raise DataJointError(f'liststring not dict, but {type(eval_value)}')
-                    elif isinstance(value, list):
+                    elif isinstance(value, (list, np.ndarray, tuple)):
+                        if isinstance(value, np.ndarray):
+                            value = value.tolist()
                         placeholder = '%s'
                         value = str(value)
                     else:
@@ -1017,7 +1019,9 @@ class BaseRelation(RelationalOperand):
         self, columns, restrictions={}, check_parts=True,
         graph=None, only_primary=False, skip_aliased=False,
         skip_self=False, check_parts_self=True, check_children=True,
-        skip_tables=[], restrict_tables=None, from_tables=None
+        skip_tables=[], restrict_tables=None, from_tables=None,
+        skip_non_masters=False, skip_endswith=None,
+        restrictions_to_columns=False
     ):
         """go back and deepjoin ancestors/upstream tables according
         to columns past. Does not work with part tables.
@@ -1060,8 +1064,30 @@ class BaseRelation(RelationalOperand):
             datajoint relation with all the desired columns and
             primary keys joined together.
         """
-        #TODO restriction columns should also be checked for
+        #only called on first recursion
+        if restrictions_to_columns:
+            if isinstance(restrictions, dict):
+                columns += [
+                        k for k in restrictions.keys()
+                        if k not in columns
+                        ]
+            elif isinstance(restrictions, (list, np.ndarray)):
+                columns += [
+                        k for k in pd.DataFrame(restrictions).columns
+                        if k not in columns
+                        ]
+            else:
+                raise DataJointError('restriction must be list or dict')
+
         #TODO non-master table
+        def skip_endswith_helper(table_name, skip_endswith):
+            if skip_endswith is None:
+                return False
+            elif isinstance(skip_endswith, str):
+                return table_name.endswith(skip_endswith)
+            elif isinstance(skip_endswith, (list, tuple)):
+                return table_name.endswith(tuple(skip_endswith))
+
         def remove_column_helper(columns, proj_set):
             for iproj in proj_set:
                 columns.remove(iproj)
@@ -1133,18 +1159,19 @@ class BaseRelation(RelationalOperand):
             #
             # non master tables should be renamed already, as subquery
             proj_non_masters = []
-            for non_master_parent in non_master_parents:
-                #do not include nullables
-                non_master_to_proj = set(columns) & set(non_master_parent.heading) - set(part_table.heading.nullables)
-                if non_master_to_proj:
-                    warnings.warn("non master parents to part table not tested.")
-                    remove_column_helper(columns, non_master_to_proj)
-                    #don't join unnecessary non master tables
-                    non_master_parent = (non_master_parent & restrictions).proj(*non_master_to_proj)
-                    part_to_proj |= (
-                        set(non_master_parent.heading.primary_key) & set(part_table.heading)
-                    )
-                    proj_non_masters.append(non_master_parent)
+            if not skip_non_masters:
+                for non_master_parent in non_master_parents:
+                    #do not include nullables
+                    non_master_to_proj = set(columns) & set(non_master_parent.heading) - set(part_table.heading.nullables)
+                    if non_master_to_proj:
+                        warnings.warn("non master parents to part table not tested.")
+                        remove_column_helper(columns, non_master_to_proj)
+                        #don't join unnecessary non master tables
+                        non_master_parent = (non_master_parent & restrictions).proj(*non_master_to_proj)
+                        part_to_proj |= (
+                            set(non_master_parent.heading.primary_key) & set(part_table.heading)
+                        )
+                        proj_non_masters.append(non_master_parent)
             #
             #only if there is something to proj
             if part_to_proj:
@@ -1246,11 +1273,16 @@ class BaseRelation(RelationalOperand):
                     check_children=check_children,
                     skip_tables=skip_tables,
                     skip_self=False,
-                    restrict_tables=restrict_tables
+                    from_tables=from_tables,
+                    restrict_tables=restrict_tables,
+                    skip_non_masters=skip_non_masters,
+                    skip_endswith=skip_endswith
                 )
 
             for part_table in part_tables:
-                if part_table.full_table_name in skip_tables:
+                if skip_endswith_helper(part_table.full_table_name, skip_endswith):
+                    continue
+                elif part_table.full_table_name in skip_tables:
                     continue
                 elif to_camel_case(part_table.table_name) in skip_tables:
                     continue
@@ -1267,7 +1299,9 @@ class BaseRelation(RelationalOperand):
                 )
             #
             for child_table in child_tables:
-                if child_table.full_table_name in skip_tables:
+                if skip_endswith_helper(child_table.full_table_name, skip_endswith):
+                    continue
+                elif child_table.full_table_name in skip_tables:
                     continue
                 elif to_camel_case(child_table.table_name) in skip_tables:
                     continue
