@@ -513,6 +513,8 @@ class BaseRelation(RelationalOperand):
         Deletes the contents of the table and its dependent tables, recursively.
         User is prompted for confirmation if config['safemode'] is set to True.
         """
+        #raise DataJointError('delete function needs urgent debugging')
+        #TODO delete has weird bug where it has invalid restrictions and renamed nodes
         already_in_transaction = self.connection.in_transaction
         safe = config['safemode']
         if already_in_transaction and safe:
@@ -521,75 +523,44 @@ class BaseRelation(RelationalOperand):
         graph = self.connection.dependencies
         graph.load()
         delete_list, rename_list = self.dependents(graph=graph, no_rename=True)
-        #delete_list = collections.OrderedDict()
-        #for table in graph.descendants(self.full_table_name):
-        #    if not table.isdigit():
-        #        delete_list[table] = FreeRelation(self.connection, table)
-        #    else:
-        #        raise DataJointError('Cascading deletes across renamed foreign keys is not supported.  See issue #300.')
-        #        parent, edge = next(iter(graph.parents(table).items()))
-        #        delete_list[table] = FreeRelation(self.connection, parent).proj(
-        #            **{new_name: old_name
-        #               for new_name, old_name in edge['attr_map'].items() if new_name != old_name})
 
-        # construct restrictions for each relation
-        restrict_by_me = set()
-        restrictions = collections.defaultdict(list)
-        # restrict by self
+        ###initialize restriction
+        restrictions = collections.OrderedDict()
         if self.restriction:
-            restrict_by_me.add(self.full_table_name)
-            restrictions[self.full_table_name].append(self.restriction)  # copy own restrictions
-        # restrict by renamed nodes
-        restrict_by_me.update(table for table in delete_list if table.isdigit())  # restrict by all renamed nodes
-        # restrict by tables restricted by a non-primary semijoin
-        for table in delete_list:
-            restrict_by_me.update(graph.children(table, primary=False))   # restrict by any non-primary dependents
-
-        # compile restriction lists
-        for table, rel in delete_list.items():
-            for dep in graph.children(table):
-                if table in restrict_by_me:
-                    restrictions[dep].append(rel)   # if restrict by me, then restrict by the entire relation
+            restrictions[self.full_table_name] = self.restriction
+        ###
+        ###loop over dependent tables
+        for table_name, rel in delete_list.items():
+            ###skip if no restriction is to be applied
+            restriction = restrictions.get(table_name, False)
+            if not restriction:
+                continue
+            ###handle renamed -- should not apply to self
+            if table_name.isdigit():
+                restriction = pd.DataFrame(restriction)
+                rename_proj = rename_list.get(table_name, {})
+                rename_proj = {v:k for k, v in rename_proj.items()}
+                restriction = restriction.rename(columns=rename_proj).to_dict('records')
+            ###restrict relation
+            rel.restrict(restriction)
+            ###
+            dep_restriction = pd.DataFrame(rel.proj().fetch())
+            ###convert restriction to record type
+            dep_restriction = dep_restriction.to_dict('records')
+            ###
+            for dep in graph.children(table_name):
+                #if zero then dependent the future tables will not have keys
+                #handle renamed
+                if not dep_restriction:
+                    pass
                 else:
-                    restrictions[dep].extend(restrictions[table])   # or re-apply the same restrictions
+                    restrictions[dep] = dep_restriction
 
-        # apply restrictions
-        for name, r in delete_list.items():
-            if restrictions[name]:  # do not restrict by an empty list
-                rename_proj = rename_list.get(name, {})
-                restriction = []
-                for rel in restrictions[name]:
-                    if isinstance(rel, RelationalOperand):
-                        if set(rename_proj.values()) & set(rel.heading.primary_key):
-                            r_temp = pd.DataFrame(rel.proj().fetch())
-                            drop_columns = set()
-                            for k, v in rename_proj.items():
-                                if v in r_temp.columns:
-                                    r_temp[k] = r_temp[v]
-                                    drop_columns.add(v)
-                            r_temp = r_temp.drop(list(drop_columns), axis=1)
-                            restriction.append(r_temp.to_dict('records'))
-                        else:
-                            restriction.append(rel.proj())
-                    elif isinstance(rel, dict):
-                        for v in set(rename_proj.values()) & set(rel):
-                            for k, value in rename_proj.items():
-                                if v == value:
-                                    rel[k] = rel[v]
-                        restriction.append(rel)
-                    elif isinstance(rel, (np.ndarray, list)):
-                        r_temp = pd.DataFrame(rel)
-                        drop_columns = set()
-                        for k, v in rename_proj.items():
-                            if v in r_temp.columns:
-                                r_temp[k] = r_temp[v]
-                                drop_columns.add(v)
-                        r_temp = r_temp.drop(list(drop_columns), axis=1)
-                        restriction.append(r_temp.to_dict('records'))
-                    else:
-                        raise TypeError('Error in restriction type for delete -- Bug')
-                #
-                r.restrict([restriction])
+        #remove from list where no restriction had to be applied
+        delete_from_list = set(delete_list.keys()) - set(restrictions.keys())
+        for k in delete_from_list:
+            delete_list.pop(k)
+
         if safe:
             print('About to delete:')
 
@@ -1081,6 +1052,7 @@ class BaseRelation(RelationalOperand):
 
         #TODO non-master table
         def skip_endswith_helper(table_name, skip_endswith):
+            table_name = table_name.replace('`', '')
             if skip_endswith is None:
                 return False
             elif isinstance(skip_endswith, str):
@@ -1228,7 +1200,9 @@ class BaseRelation(RelationalOperand):
             except:
                 pass
             #
-            if parent.full_table_name in skip_tables:
+            if skip_endswith_helper(parent.full_table_name, skip_endswith):
+                continue
+            elif parent.full_table_name in skip_tables:
                 continue
             elif parent.classname in skip_tables:
                 continue
@@ -1239,6 +1213,8 @@ class BaseRelation(RelationalOperand):
                     pass
                 else:
                     continue
+
+            #proj parent
             parent_to_proj = set(parent.heading) - set(renames.values())
             #
             if check_parts:
@@ -1344,7 +1320,22 @@ class BaseRelation(RelationalOperand):
             #
             parent_join = (self & restrictions).proj(*to_proj)
             #join part tables
+            #TODO not in skip tables
             for part_table in part_tables:
+                if skip_endswith_helper(part_table.full_table_name, skip_endswith):
+                    continue
+                elif part_table.full_table_name in skip_tables:
+                    continue
+                elif to_camel_case(part_table.table_name) in skip_tables:
+                    continue
+                if restrict_tables is not None:
+                    if part_table.full_table_name in restrict_tables:
+                        pass
+                    elif to_camel_case(part_table.table_name) in skip_tables:
+                        pass
+                    else:
+                        continue
+
                 parent_join = part_table_helper(
                     parent_join, columns, restrictions, part_table,
                     renames={}, from_table=from_tables
