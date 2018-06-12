@@ -28,7 +28,10 @@ def superjoin(rels, columns=None, restrictions={}):
         if columns is None:
             to_proj = rel.heading.names
         else:
-            to_proj = [attr for attr in rel.heading if attr in columns]
+            to_proj = [
+                    attr for attr in rel.heading
+                    if attr in columns
+                    ]
         if n == 0:
             rel_proj = (rel & restrictions).proj(*to_proj)
         else:
@@ -38,7 +41,6 @@ def superjoin(rels, columns=None, restrictions={}):
                     (set(rel.heading.dependent_attributes) & set(rel_proj.heading.dependent_attributes))
                     ]
             rel_proj *= (rel & restrictions).proj(*to_proj)
-
     return rel_proj
 
 class BaseRelation(RelationalOperand):
