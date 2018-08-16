@@ -1,7 +1,8 @@
 import os
 import numpy as np
 from tqdm import tqdm
-from . import config, DataJointError
+from . import config
+from .errors import DataJointError
 from .hash import long_hash
 from .blob import pack, unpack
 from .base_relation import BaseRelation

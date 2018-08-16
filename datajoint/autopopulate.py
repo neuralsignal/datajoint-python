@@ -5,8 +5,13 @@ import traceback
 import random
 from tqdm import tqdm
 from pymysql import OperationalError
+<<<<<<< HEAD
 from .relational_operand import RelationalOperand, AndList
 from . import DataJointError
+=======
+from .relational_operand import RelationalOperand, AndList, U
+from .errors import DataJointError
+>>>>>>> upstream/master
 from .base_relation import FreeRelation
 import signal
 

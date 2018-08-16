@@ -3,7 +3,8 @@ import pymysql
 import inspect
 import logging
 import re
-from . import conn, DataJointError, config
+from . import conn, config
+from .errors import DataJointError
 from .erd import ERD
 from .jobs import JobTable
 from .external import ExternalTable
@@ -100,7 +101,12 @@ class Schema:
         in the context.
         """
         # if self.context is not set, use the calling namespace
-        context = self.context if self.context is not None else inspect.currentframe().f_back.f_locals
+        if self.context is not None:
+            context = self.context
+        else:
+            frame = inspect.currentframe().f_back
+            context = frame.f_locals
+            del frame
         tables = [
             row[0] for row in self.connection.query('SHOW TABLES in `%s`' % self.database)
             if lookup_class_name('`{db}`.`{tab}`'.format(db=self.database, tab=row[0]), context, 0) is None]
@@ -227,7 +233,3 @@ class Schema:
         if self._external is None:
             self._external = ExternalTable(self.connection, self.database)
         return self._external
-
-    def erd(self):
-        # get the ERD of the schema in local context
-        return ERD(self, context=inspect.currentframe().f_back.f_locals)
