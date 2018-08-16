@@ -6,13 +6,9 @@ import numpy as np
 import re
 import datetime
 import decimal
-<<<<<<< HEAD
 import pandas as pd
-from . import DataJointError, config
-=======
 from . import config
 from .errors import DataJointError
->>>>>>> upstream/master
 from .fetch import Fetch, Fetch1
 from importlib import import_module
 

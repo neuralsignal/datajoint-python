@@ -10,15 +10,9 @@ import os
 import logging
 import warnings
 from pymysql import OperationalError, InternalError, IntegrityError
-<<<<<<< HEAD
-from . import config, DataJointError
+from . import config
 from .declare import declare, add_columns, find_special_attributes, LOADSTRING_MUST_KEYS, LOADSTRING_OPT_KEYS
 from .relational_operand import RelationalOperand, Subquery, function_converter
-=======
-from . import config
-from .declare import declare
-from .relational_operand import RelationalOperand
->>>>>>> upstream/master
 from .blob import pack
 from .utils import user_choice, to_camel_case
 from .heading import Heading
@@ -96,19 +90,15 @@ class BaseRelation(RelationalOperand):
         if self._heading is None:
             self._heading = Heading()  # instance-level heading
         if not self._heading:  # lazy loading of heading
-<<<<<<< HEAD
-            self._heading.init_from_database(
-                self.connection, self.database, self.table_name,
-                self.special_attributes
-            )
-=======
             if self.connection is None:
                 raise DataJointError(
                     'DataJoint class is missing a database connection. '
                     'Missing schema decorator on the class? (e.g. @schema)')
             else:
-                self._heading.init_from_database(self.connection, self.database, self.table_name)
->>>>>>> upstream/master
+                self._heading.init_from_database(
+                    self.connection, self.database, self.table_name,
+                    self.special_attributes
+                    )
         return self._heading
 
     @property
