@@ -3,6 +3,7 @@ import pymysql
 import logging
 import re
 import itertools
+import inspect
 import collections
 from . import conn, config
 from .errors import DataJointError
