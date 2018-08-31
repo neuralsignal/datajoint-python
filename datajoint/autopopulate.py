@@ -32,8 +32,8 @@ class AutoPopulate:
                 Users may override to change the granularity or the scope of populate() calls.
         """
         if not hasattr(self, 'joined_table'):
-            self._multi_fetch = True
-        if not self._multi_fetch: #TODO deal with multiple
+            self.multi_fetch = True
+        if not self.multi_fetch: #TODO deal with multiple
             self._key_source = self.joined_table
         if self._key_source is None:
             if self.target.full_table_name not in self.connection.dependencies:
@@ -85,7 +85,7 @@ class AutoPopulate:
                 'The populate target lacks attribute %s from the primary key of key_source' % next(
                     name for name in todo.heading.primary_key
                     if name not in self.target.heading
-                    and (hasattr(self, 'joined_table') and not self._multi_fetch)
+                    and (hasattr(self, 'joined_table') and not self.multi_fetch)
                 ))
         except StopIteration:
             pass
