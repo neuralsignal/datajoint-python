@@ -21,9 +21,73 @@ from . import __version__ as version
 
 logger = logging.getLogger(__name__)
 
-def superjoin(rels, columns=None, restrictions={}):
+def join_restrictions(*args):
+    """join two or more restrictions of possibly different types.
+    Only works with dict, list and np.recarray at the moment.
+    """
+    args = list(args)
+    res1 = args.pop()
+    try:
+        res2 = args.pop()
+    except IndexError:
+        assert len(args) == 0
+        return res1
+    #
+    if isinstance(res1, np.ndarray):
+        res1 = pd.DataFrame(res1).to_dict('records')
+    if isinstance(res2, np.ndarray):
+        res2 = pd.DataFrame(res2).to_dict('records')
+    #
+    def join_dicts(res1, res2):
+        """helper function to join two restriction
+        dictionaries.
+        """
+        if not isinstance(res1, dict) or not isinstance(res2, dict):
+            raise TypeError(f"wrong types: {type(res1)}, {type(res2)}")
+        key_overlap = set(res1) & set(res2)
+        if key_overlap:
+            difference_exists = False
+            for key in key_overlap:
+                if res1[key] != res2[key]:
+                    difference_exists = True
+                    break
+            if not difference_exists:
+                joined_res = {**res1, **res2}
+            else:
+                raise NotImplementedError("Differences between two dictionaries")
+        else:
+            joined_res = {**res1, **res2}
+
+        return joined_res
+
+    if isinstance(res1, dict) and isinstance(res2, dict):
+        joined_res = join_dicts(res1, res2)
+    elif isinstance(res1, dict) and isinstance(res2, list):
+        joined_res = [join_dicts(res1, ires2) for ires2 in res2]
+    elif isinstance(res1, list) and isinstance(res2, dict):
+        joined_res = [join_dicts(ires1, res2) for ires1 in res1]
+    elif isinstance(res1, list) and isinstance(res2, list):
+        joined_res = [join_dicts(ires1, ires2) for ires1, ires2 in itertools.product(res1, res2)]
+    joined_res = join_restrictions(joined_res, *args)
+    return joined_res
+
+def kwargs_to_restriction(kwargs):
+    kwargs = OrderedDict(kwargs)
+    for key, value in kwargs.items():
+        if not isinstance(value, list):
+            kwargs[key] = [value]
+    restriction = []
+    for values in itertools.product(*kwargs.values()):
+        restriction.append(dict(zip(kwargs.keys(), values)))
+    return restriction
+
+def superjoin(rels, columns=None, restrictions={}, **kwargs):
     """Return a joined relation with applied restrictions
     """
+    if isinstance(restrictions, dict):
+        restrictions = kwargs_to_restriction(restrictions)
+    if kwargs:
+        restrictions = join_restrictions(restrictions, kwargs_to_restriction(kwargs))
     for n, rel in enumerate(rels):
         if columns is None:
             to_proj = rel.heading.names

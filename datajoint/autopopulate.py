@@ -5,7 +5,7 @@ import traceback
 import random
 from tqdm import tqdm
 from pymysql import OperationalError
-from .relational_operand import RelationalOperand, AndList, U
+from .relational_operand import RelationalOperand, AndList#, U
 from .errors import DataJointError
 from .base_relation import FreeRelation
 import signal
@@ -31,8 +31,8 @@ class AutoPopulate:
                 The default value is the join of the parent relations.
                 Users may override to change the granularity or the scope of populate() calls.
         """
-        #if hasattr(self, 'joined_table'):
-        #    self._key_source = self.joined_table
+        if hasattr(self, 'joined_table'):
+            self._key_source = self.joined_table
         if self._key_source is None:
             if self.target.full_table_name not in self.connection.dependencies:
                 self.connection.dependencies.load()
@@ -81,7 +81,8 @@ class AutoPopulate:
         try:
             raise DataJointError(
                 'The populate target lacks attribute %s from the primary key of key_source' % next(
-                    name for name in todo.heading.primary_key if name not in self.target.heading))
+                    name for name in todo.heading.primary_key
+                    if name not in self.target.heading and not hasattr(self, 'joined_table')))
         except StopIteration:
             pass
         return (todo & AndList(restrictions)).proj()
