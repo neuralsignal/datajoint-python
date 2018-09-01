@@ -54,7 +54,10 @@ def join_restrictions(*args):
             if not difference_exists:
                 joined_res = {**res1, **res2}
             else:
-                raise NotImplementedError("Differences between two dictionaries")
+                raise NotImplementedError(
+                        f"Differences between two dictionaries"
+                        f": {res1}, {res2}"
+                        )
         else:
             joined_res = {**res1, **res2}
 
@@ -68,7 +71,8 @@ def join_restrictions(*args):
         joined_res = [join_dicts(ires1, res2) for ires1 in res1]
     elif isinstance(res1, list) and isinstance(res2, list):
         joined_res = [join_dicts(ires1, ires2) for ires1, ires2 in itertools.product(res1, res2)]
-    joined_res = join_restrictions(joined_res, *args)
+    if len(args) != 0:
+        joined_res = join_restrictions(joined_res, *args)
     return joined_res
 
 def kwargs_to_restriction(kwargs):
@@ -847,6 +851,9 @@ class BaseRelation(RelationalOperand):
             else:
                 part_name = to_camel_case(name[1].split('__')[-1])
                 master_name = to_camel_case(name[1].split('__')[-2])
+        elif len(name) == 3:
+            part_name = to_camel_case(name[2])
+            master_name = to_camel_case(name[1])
         else:
             part_name = None
             master_name = None

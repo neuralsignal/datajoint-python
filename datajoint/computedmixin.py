@@ -6,10 +6,8 @@ import numpy as np
 import pandas as pd
 import importlib
 from warnings import warn
-from .autopopulate import AutoPopulate
 from .base_relation import join_restrictions, superjoin
 from joblib import Parallel, delayed
-from .utils import to_camel_case
 
 from .errors import DataJointError
 
@@ -370,6 +368,10 @@ class ComputedMixin:
             else:
                 raise DataJointError(f'key {key} is not json definable for approach table.')
 
+        #required if not in json definable settings
+        if self._multi_fetch is None:
+            self._multi_fetch = False
+
         if JSON_STR:
             try:
                 if settings_dict['global_settings'] is None:
@@ -413,8 +415,6 @@ class ComputedMixin:
         c.extend(self.joined_columns)
         return np.unique(c).tolist()
 
-
-
     @property
     def parallel(self):
         if self._parallel is None:
@@ -427,8 +427,6 @@ class ComputedMixin:
     def multi_fetch(self):
         if self._multi_fetch is None:
             self.load_settings1()
-            if self._multi_fetch is None:
-                self._multi_fetch = False
         return self._multi_fetch
 
     @property
@@ -449,9 +447,7 @@ class ComputedMixin:
         if not isinstance(self._update_parents, bool):
             raise DataJointError('update parents must be boolean')
         return self._update_parents
-        #if self._update_parents is None:
-        #    return []
-        #return self._update_parents.copy()
+
     @property
     def wrap_columns(self):
         if self._wrap_columns is None:
@@ -523,13 +519,11 @@ class ComputedMixin:
                 return self._restrict_tables.copy()
             else:
                 restrict_tables = []
-                for tinfo in self._restrict_tables:
-                    from . import schema
-                    tinfo = tinfo.split('.')
-                    table = getattr(getattr(schema, tinfo[0].replace('`', '')), to_camel_case(tinfo[1].replace('`', '')))
-                    if len(tinfo) > 2:
-                        table = getattr(table, to_camel_case(tinfo[2].replace('`', '')))
+
+                for table_name in self._restrict_tables:
+                    table = self.get_table_class(table_name)
                     restrict_tables.append(table)
+
                 return restrict_tables
         else:
             raise DataJointError('restrict tables must be list')

@@ -9,6 +9,7 @@ from .relational_operand import RelationalOperand, AndList#, U
 from .errors import DataJointError
 from .base_relation import FreeRelation
 import signal
+from .computedmixin import ComputedMixin
 
 # noinspection PyExceptionInherit,PyCallingNonCallable
 
@@ -31,19 +32,23 @@ class AutoPopulate:
                 The default value is the join of the parent relations.
                 Users may override to change the granularity or the scope of populate() calls.
         """
-        if not hasattr(self, 'joined_table'):
-            self.multi_fetch = True
-        if not self.multi_fetch: #TODO deal with multiple
-            self._key_source = self.joined_table
         if self._key_source is None:
-            if self.target.full_table_name not in self.connection.dependencies:
-                self.connection.dependencies.load()
-            parents = list(self.target.parents(primary=True))
-            if not parents:
-                raise DataJointError('A relation must have parent relations to be able to be populated')
-            self._key_source = FreeRelation(self.connection, parents.pop(0)).proj()
-            while parents:
-                self._key_source *= FreeRelation(self.connection, parents.pop(0)).proj()
+            if ComputedMixin in self.__class__.__bases__:
+                try:
+                    self.using_joined_table = True
+                    self._key_source = self.joined_table
+                except DataJointError:
+                    self.using_joined_table = False
+
+            if not self.using_joined_table:
+                if self.target.full_table_name not in self.connection.dependencies:
+                    self.connection.dependencies.load()
+                parents = list(self.target.parents(primary=True))
+                if not parents:
+                    raise DataJointError('A relation must have parent relations to be able to be populated')
+                self._key_source = FreeRelation(self.connection, parents.pop(0)).proj()
+                while parents:
+                    self._key_source *= FreeRelation(self.connection, parents.pop(0)).proj()
         return self._key_source
 
     def make(self, key):
@@ -85,7 +90,7 @@ class AutoPopulate:
                 'The populate target lacks attribute %s from the primary key of key_source' % next(
                     name for name in todo.heading.primary_key
                     if name not in self.target.heading
-                    and not hasattr(self, 'joined_table')
+                    and not self.using_joined_table
                 ))
         except StopIteration:
             pass
