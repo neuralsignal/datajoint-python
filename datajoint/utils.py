@@ -2,7 +2,7 @@
 
 import re
 import os
-from .computedmixin import JSON_STR
+#from .computedmixin import JSON_STR
 import numpy as np
 from .errors import DataJointError
 
@@ -113,7 +113,7 @@ def read_jsons(json_fields, column_name='json'):
     """
     return np.recarray([read_json(json_field) for json_field in json_fields], dtype=[(column_name, object)])
 
-def interpret_json(json_dict, json_str=JSON_STR):
+def interpret_json(json_dict, json_str):
     """Given one json dictionary interpret it for insertion
 
     Parameters
@@ -133,7 +133,7 @@ def interpret_json(json_dict, json_str=JSON_STR):
     else:
         return json_dict
 
-def interpret_jsons(json_dicts, json_str=JSON_STR, column_name='json'):
+def interpret_jsons(json_dicts, json_str, column_name='json'):
     """Return json_fields for multiple insertion as a numpy recarray.
     """
     return np.recarray([interpret_json(json_dict, json_str) for json_dict in json_dicts], dtype=[(column_name, object)])
