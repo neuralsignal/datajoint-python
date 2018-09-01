@@ -2,6 +2,8 @@
 
 import re
 import os
+from .computedmixin import JSON_STR
+import numpy as np
 from .errors import DataJointError
 
 class ClassProperty:
@@ -82,3 +84,56 @@ def safe_write(filename, blob):
     with open(temp_file, 'bw') as f:
         f.write(blob)
     os.rename(temp_file, filename)
+
+def read_json(json_field):
+    """read a single json entry after having been fetched
+
+    Returns
+    -------
+    json_field : dict
+        json_field reformatted as a dictionary.
+    """
+    if isinstance(json_field, str):
+        return eval(json_field)
+    elif isinstance(json_field, np.recarray):
+        json_field = [dict(zip(json_field.dtype.names, values)) for values in json_field]
+        if len(json_field) != 1:
+            raise DataJointError("json field could not be intepreted")
+        return json_field[0]
+    else:
+        return json_field
+
+def read_jsons(json_fields, column_name='json'):
+    """read multiple json entries
+
+    Returns
+    -------
+    json_fields : numpy.recarray
+        recarray with each entry modified to a dictionary.
+    """
+    return np.recarray([read_json(json_field) for json_field in json_fields], dtype=[(column_name, object)])
+
+def interpret_json(json_dict, json_str=JSON_STR):
+    """Given one json dictionary interpret it for insertion
+
+    Parameters
+    ----------
+    json_dict : dict
+        the json dictionary to be entered
+    json_str : bool, optional
+        Indicate if the json is to be passed as a string
+
+    Returns
+    -------
+    json_field : unknown
+        the json_field reformatted for entry into the database
+    """
+    if json_str:
+        return str(json_dict)
+    else:
+        return json_dict
+
+def interpret_jsons(json_dicts, json_str=JSON_STR, column_name='json'):
+    """Return json_fields for multiple insertion as a numpy recarray.
+    """
+    return np.recarray([interpret_json(json_dict, json_str) for json_dict in json_dicts], dtype=[(column_name, object)])
