@@ -85,7 +85,7 @@ class AutoPopulate:
                 'The populate target lacks attribute %s from the primary key of key_source' % next(
                     name for name in todo.heading.primary_key
                     if name not in self.target.heading
-                    and (hasattr(self, 'joined_table') and not self.multi_fetch)
+                    and not hasattr(self, 'joined_table')
                 ))
         except StopIteration:
             pass
