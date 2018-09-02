@@ -314,6 +314,11 @@ class ComputedMixin:
                 if update_columns:
                     (parent_table & key).update(parents_update[list(update_columns)].dropna().to_dict())
         #
+        self._sequential_insert_helper(key, output)
+
+    def _sequential_insert_helper(self, key, output):
+        """helper function for sequantial insertion
+        """
         if self.has_part_tables and not self.skip_part_tables:
             self.insert1p(output, np_first=self._np_first)
         else:
@@ -325,6 +330,7 @@ class ComputedMixin:
         #
         if self.verbose:
             print(f"Inserted {key} for table {self.full_table_name}")
+
 
     def load_settings1(self):
         """Load settings for one approach in the approach table.
@@ -534,7 +540,7 @@ class ComputedMixin:
             if self.restrict_tables is None or self.always_deepjoin:
                 self._joined_table = self.deepjoin(
                         self.joined_columns, self.restrictions,
-                        skip_self=True,
+                        skip_self=self.skip_self,
                         skip_tables=self.skip_tables,
                         restrict_tables=self.restrict_tables,
                         restrictions_to_columns=True,
@@ -548,6 +554,10 @@ class ComputedMixin:
                         restrictions=self.restrictions
                         )
         return self._joined_table
+
+    @property
+    def skip_self(self):
+        return True
 
     @property
     def constant_restrictions(self):
@@ -609,3 +619,58 @@ class ComputedMixin:
                 self.approach_table.full_table_name.replace('approach', 'strategy')
             )
         return self._strategy_table
+
+
+class UpdateMixin(ComputedMixin):
+
+    @property
+    def skip_self(self):
+        return False
+
+    def autopopulate(self, approach, restrictions, **kwargs):
+        """autopopulate method for updating
+        """
+        primary_key = set(self.heading.primary_key)
+        contains_primary_key = True
+        if isinstance(restrictions, list):
+            for restriction in restrictions:
+                if not ((set(restriction) & primary_key) == primary_key):
+                    contains_primary_key = False
+        elif isinstance(restrictions, dict):
+            if not ((set(restrictions) & primary_key) == primary_key):
+                contains_primary_key = False
+        else:
+            raise DataJointError(
+                'Restriction must be list or dict for auto-update'
+            )
+
+        if not contains_primary_key:
+            raise DataJointError(
+                'Restriction must contain all primary keys'
+                f' for autoupdate : {restrictions}'
+            )
+
+        super().autopopulate(approach, restrictions, **kwargs)
+
+    def populate(self):
+        keys = self.joined_table.proj().fetch(as_dict=True)
+        for key in keys:
+            self._make_tuples(key)
+
+    def _sequential_insert_helper(self, key, output):
+        """helper function for sequantial insertion
+        """
+        if self.has_part_tables and not self.skip_part_tables:
+            (self & key).updatep(output, np_first=self._np_first)
+        else:
+            output = pd.Series(output)
+            columns = set(self.heading) & set(output.index)
+            if not self.update_parents:
+                assert len(columns) == len(output.index), 'not all output columns recognized.'
+            (self & key).update(
+                output[list(columns)].dropna().to_dict(),
+                np_first=self._np_first
+            )
+        #
+        if self.verbose:
+            print(f"Updated {key} for table {self.full_table_name}")
