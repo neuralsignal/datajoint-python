@@ -72,7 +72,7 @@ from .erd import ERD
 from .admin import set_password, kill
 from .errors import DataJointError, DuplicateError
 from .basemixin import BaseMixin
-from .computedmixin import ComputedMixin
+from .computedmixin import ComputedMixin, UpdateMixin
 
 
 def create_virtual_module(module_name, schema_name, create_schema=False, create_tables=False):
