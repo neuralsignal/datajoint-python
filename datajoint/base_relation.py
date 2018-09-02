@@ -270,39 +270,49 @@ class BaseRelation(RelationalOperand):
         for row in rows:
             self.insert1p(row, **kwargs)
 
-    def insert1p(self, rows, **kwargs):
-        """insert data into self and its part tables.
-        Does not check extra fields.
-        :param rows: a pandas DataFrame or dict.
+    def _method1p(self, method, rows, at_once=True, **kwargs):
+        """General way to apply insert1 or update to
+        part tables as well
         """
-        #TODO autoincrement
+        #TODO autoincrement?
         if isinstance(rows, pd.DataFrame):
             #does not test if master input is unique
             columns = set(self.heading) & set(rows.columns)
             master_input = rows[list(columns)].iloc[0].dropna().to_dict()
-            self.insert1(master_input, **kwargs)
+            getattr(self, method)(master_input, **kwargs)
             for part_table in self.part_tables():
                 part_columns = set(part_table.heading) & set(rows.columns)
                 if not part_columns:
                     continue
                 part_input = rows[list(part_columns)]
                 if part_input.isnull().values.any():
-                    raise NotImplementedError('insert to part tables with nan values')
+                    raise NotImplementedError(f'{method} to part tables with nan values')
                 part_input = part_input.to_dict('records')
-                part_table.insert(part_input, **kwargs)
+                if at_once:
+                    getattr(part_table, method[:-1])(part_input, **kwargs)
+                else:
+                    for row_input in part_input:
+                        getattr(part_table, method)(part_input, **kwargs)
         elif isinstance(rows, dict):
             rows = pd.Series(rows)
             columns = set(self.heading) & set(rows.index)
             master_input = rows[list(columns)].dropna().to_dict()
-            self.insert1(master_input, **kwargs)
+            getattr(self, method)(master_input, **kwargs)
             for part_table in self.part_tables():
                 part_columns = set(part_table.heading) & set(rows.index)
                 if not part_columns:
                     continue
                 part_input = rows[list(part_columns)].dropna().to_dict()
-                part_table.insert1(part_input, **kwargs)
+                getattr(part_table, method)(part_input, **kwargs)
         else:
             raise DataJointError(f"Rows must pandas dataframe or dict not {type(rows)}")
+
+    def insert1p(self, rows, **kwargs):
+        """insert data into self and its part tables.
+        Does not check extra fields.
+        :param rows: a pandas DataFrame or dict.
+        """
+        self._method1p(rows, 'insert1', at_once=True, **kwargs)
 
     def insert1(self, row, **kwargs):
         """
@@ -802,7 +812,8 @@ class BaseRelation(RelationalOperand):
         attr = self.heading[attrname]
 
         if attr.is_external:
-            placeholder, value = '%s', self.external_table.put(attr.type, value, np_first=np_first)
+            placeholder, value = '%s', self.external_table.put(
+                attr.type, value, np_first=np_first)
         elif attr.is_blob:
             value = pack(value)
             placeholder = '%s'
@@ -823,11 +834,16 @@ class BaseRelation(RelationalOperand):
 
         self.connection.query(command, args=tuple([value]+self._format_args) if value is not None else tuple(self._format_args))
 
-    def update(self, update_dict):
+    def update(self, update_dict, **kwargs):
         """update using a dictionary
         """
         for attr, value in update_dict.items():
-            self._update(attr, value)
+            self._update(attr, value, **kwargs)
+
+    def updatep(self, rows, **kwargs):
+        """Update with part tables
+        """
+        self._method1p(rows, 'update', at_once=False, **kwargs)
 
     def uberupdate(self, update_dict):
         """update multiple rows
