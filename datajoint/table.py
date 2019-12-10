@@ -11,7 +11,7 @@ from .settings import config
 from .declare import declare, alter
 from .expression import QueryExpression
 from . import blob
-from .utils import user_choice
+from .utils import user_choice, to_camel_case
 from .heading import Heading
 from .errors import DuplicateError, AccessError, DataJointError, UnknownAttributeError
 from .version import __version__ as version
@@ -35,6 +35,7 @@ class Table(QueryExpression):
     database = None
     _log_ = None
     declaration_context = None
+    _part_tables = None
 
     # -------------- required by QueryExpression ----------------- #
     @property
@@ -125,9 +126,53 @@ class Table(QueryExpression):
         """
         return self.connection.dependencies.parents(self.full_table_name, primary)
 
+    @property
+    def part_tables(self):
+        """
+        Does not work with aliased part tables.
+
+        :return: tuple of part tables of self
+        """
+
+        if self._part_tables is None:
+
+            # TODO general load checking
+            self.connection.dependencies.load()
+
+            part_tables = []
+            self_table_name = self.full_table_name.replace('`', '')
+
+            for child_table_name in self.children():
+
+                child_table_name = child_table_name.replace('`', '')
+
+                if child_table_name.startswith(self_table_name + '__'):
+
+                    part_table_name = child_table_name.replace(
+                        self_table_name + '__', ''
+                    )
+
+                    part_table = getattr(
+                        self,
+                        to_camel_case(part_table_name)
+                    )
+
+                    part_tables.append(part_table)
+
+            self._part_tables = tuple(part_tables)
+
+        return self._part_tables
+
+    @property
+    def has_part_tables(self):
+        """True if self has part tables.
+        """
+
+        return bool(self.part_tables)
+
     def children(self, primary=None):
         """
-        :param primary: if None, then all parents are returned. If True, then only foreign keys composed of
+        :param primary: if None, then all children are returned. If True, then only foreign keys composed of
             primary key attributes are considered.  If False, the only foreign keys including at least one non-primary
             attribute are considered.
         :return: dict of tables with foreign keys referencing self
@@ -135,10 +180,10 @@ class Table(QueryExpression):
         return self.connection.dependencies.children(self.full_table_name, primary)
 
     def descendants(self):
-        return self. connection.dependencies.descendants(self.full_table_name)
+        return self.connection.dependencies.descendants(self.full_table_name)
 
     def ancestors(self):
-        return self. connection.dependencies.ancestors(self.full_table_name)
+        return self.connection.dependencies.ancestors(self.full_table_name)
 
     @property
     def is_declared(self):
@@ -165,6 +210,46 @@ class Table(QueryExpression):
     @property
     def external(self):
         return self.connection.schemas[self.database].external
+
+    def insert1p(self, rows, **kwargs):
+        """
+        Insert data records or Mapping for one entry and its part tables.
+        It does not check if extra fields are defined.
+        Only tests if master primary keys are unique.
+
+        :param rows: a pandas DataFrame, numpy.recarray, or dict
+        """
+
+        if isinstance(rows, np.recarray):
+            rows = pandas.DataFrame(rows)
+        elif isinstance(rows, dict):
+            rows = pandas.DataFrame([rows])
+        elif not isinstance(rows, pandas.DataFrame):
+            raise DataJointError(
+                'rows must be of type pandas dataframe, numpy recarray, '
+                'or dict for insert1p, but is of type {}'.format(type(rows)))
+
+        columns = set(self.heading) & set(rows.columns)
+        assert not (set(self.primary_key) - columns), \
+            'not all master primary key in dataframe for insert1p.'
+        # select self columns
+        master_input = rows[list(columns)]
+        # test if self primary is unique
+        assert len(master_input[self.primary_key].drop_duplicates()) == 1, \
+            'master primary keys are not unique.'
+        # convert master input
+        master_input = master_input.iloc[0].dropna().to_dict()
+        # insert into self
+        self.insert1(master_input, **kwargs)
+
+        # insert into part tables
+        for part_table in self.part_tables:
+            part_columns = set(part_table.heading) & set(rows.columns)
+            if not part_columns:
+                continue
+            part_input = rows[list(part_columns)]
+            part_input = part_input.to_dict('records')
+            part_table.insert(part_input, **kwargs)
 
     def insert1(self, row, **kwargs):
         """
@@ -247,6 +332,7 @@ class Table(QueryExpression):
                 if ignore_extra_fields and name not in heading:
                     return None
                 attr = heading[name]
+
                 if attr.adapter:
                     value = attr.adapter.put(value)
                 if value is None or (attr.numeric and (value == '' or np.isnan(np.float(value)))):
