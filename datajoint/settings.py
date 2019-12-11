@@ -45,6 +45,7 @@ default = OrderedDict({
     'display.show_tuple_count': True,
     'database.use_tls': None,
     'enable_python_native_blobs': False,  # python-native/dj0 encoding support
+    'enable_python_pickle_blobs': False
 })
 
 logger = logging.getLogger(__name__)

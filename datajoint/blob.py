@@ -1,5 +1,5 @@
 """
-(De)serialization methods for python datatypes and numpy.ndarrays with provisions for mutual 
+(De)serialization methods for python datatypes and numpy.ndarrays with provisions for mutual
 compatibility with Matlab-based serialization implemented by mYm.
 """
 
@@ -9,6 +9,7 @@ import collections
 from decimal import Decimal
 import datetime
 import uuid
+import pickle
 import numpy as np
 from .errors import DataJointError
 from .utils import OrderedDict
@@ -76,7 +77,13 @@ class Blob:
             raise DataJointError('v0.12+ python native blobs disabled. see also: https://github.com/datajoint/datajoint-python#python-native-blobs')
 
         self.protocol = b"dj0\0"  # when using new blob features
-            
+
+    def set_djpickle(self):
+        if not config.get('enable_python_pickle_blobs'):
+            raise DataJointError('v0.12+ python pickle blobs disabled.')
+
+        self.protocol = b"djp\0"
+
     def squeeze(self, array, convert_to_scalar=True):
         """
         Simplify the input array - squeeze out all singleton dimensions.
@@ -102,7 +109,7 @@ class Blob:
             self._blob = blob
             self._pos = 0
         blob_format = self.read_zero_terminated_string()
-        if blob_format in ('mYm', 'dj0'):
+        if blob_format in ('mYm', 'dj0', 'djp'):
             return self.read_blob(n_bytes=len(self._blob) - self._pos)
 
     def read_blob(self, n_bytes=None):
@@ -123,6 +130,7 @@ class Blob:
                 "\4": self.read_dict,      # a Mapping
                 "\5": self.read_string,    # a UTF8-encoded string
                 "\6": self.read_bytes,     # a ByteString
+                "\7": self.read_pickle,    # a pickle dump
                 "F": self.read_recarray,   # numpy array with fields, including recarrays
                 "d": self.read_decimal,    # a decimal
                 "t": self.read_datetime,   # date, time, or datetime
@@ -174,7 +182,10 @@ class Blob:
             return self.pack_set(obj)
         if obj is None:
             return self.pack_none()
-        raise DataJointError("Packing object of type %s currently not supported!" % type(obj))
+
+        self.set_djpickle()
+        return self.pack_pickle(obj)
+        # raise DataJointError("Packing object of type %s currently not supported!" % type(obj))
 
     def read_array(self):
         n_dims = int(self.read_value('uint64'))
@@ -266,13 +277,22 @@ class Blob:
     def pack_string(s):
         blob = s.encode()
         return b"\5" + len_u64(blob) + blob
-    
+
     def read_bytes(self):
         return self.read_binary(self.read_value())
-    
+
     @staticmethod
     def pack_bytes(s):
         return b"\6" + len_u64(s) + s
+
+    def read_pickle(self):
+        s = self.read_binary(self.read_value())
+        return pickle.loads(s)
+
+    @staticmethod
+    def pack_pickle(obj):
+        s = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+        return b"\7" + len_u64(s) + s
 
     def read_none(self):
         pass
@@ -386,7 +406,7 @@ class Blob:
         data = self._blob[self._pos:target].decode()
         self._pos = target + 1
         return data
-        
+
     def read_value(self, dtype='uint64', count=1):
         data = np.frombuffer(self._blob, dtype=dtype, count=count, offset=self._pos)
         self._pos += data.dtype.itemsize * data.size
@@ -410,7 +430,7 @@ class Blob:
 def pack(obj, compress=True):
     if bypass_serialization:
         # provide a way to move blobs quickly without de/serialization
-        assert isinstance(obj, bytes) and obj.startswith((b'ZL123\0', b'mYm\0', b'dj0\0'))
+        assert isinstance(obj, bytes) and obj.startswith((b'ZL123\0', b'mYm\0', b'dj0\0', b'djp\0'))
         return obj
     return Blob().pack(obj, compress=compress)
 
@@ -418,7 +438,7 @@ def pack(obj, compress=True):
 def unpack(blob, squeeze=False):
     if bypass_serialization:
         # provide a way to move blobs quickly without de/serialization
-        assert isinstance(blob, bytes) and blob.startswith((b'ZL123\0', b'mYm\0', b'dj0\0'))
+        assert isinstance(blob, bytes) and blob.startswith((b'ZL123\0', b'mYm\0', b'dj0\0', b'djp\0'))
         return blob
     if blob is not None:
         return Blob(squeeze=squeeze).unpack(blob)
