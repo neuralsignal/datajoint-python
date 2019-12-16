@@ -11,11 +11,15 @@ from .attribute_adapter import get_adapter, AttributeAdapter
 
 logger = logging.getLogger(__name__)
 
-default_attribute_properties = dict(    # these default values are set in computed attributes
-    name=None, type='expression', in_key=False, nullable=False, default=None, comment='calculated attribute',
-    autoincrement=False, numeric=None, string=None, uuid=False, is_blob=False, is_attachment=False, is_filepath=False,
+default_attribute_properties = dict(
+    # these default values are set in computed attributes
+    name=None, type='expression', in_key=False, nullable=False, default=None,
+    comment='calculated attribute',
+    autoincrement=False, numeric=None, string=None, uuid=False, is_blob=False,
+    is_attachment=False, is_filepath=False,
     is_external=False, adapter=None,
-    store=None, unsupported=False, sql_expression=None, database=None, dtype=object)
+    store=None, unsupported=False, sql_expression=None,
+    database=None, dtype=object)
 
 
 class Attribute(namedtuple('_Attribute', default_attribute_properties)):
@@ -208,11 +212,18 @@ class Heading:
                 in_key=(attr['in_key'] == 'PRI'),
                 database=database,
                 nullable=attr['nullable'] == 'YES',
-                autoincrement=bool(re.search(r'auto_increment', attr['Extra'], flags=re.I)),
-                numeric=any(TYPE_PATTERN[t].match(attr['type']) for t in ('DECIMAL', 'INTEGER', 'FLOAT')),
-                string=any(TYPE_PATTERN[t].match(attr['type']) for t in ('ENUM', 'TEMPORAL', 'STRING')),
-                is_blob=bool(TYPE_PATTERN['INTERNAL_BLOB'].match(attr['type'])),
-                uuid=False, is_attachment=False, is_filepath=False, adapter=None,
+                autoincrement=bool(
+                    re.search(r'auto_increment', attr['Extra'], flags=re.I)),
+                numeric=any(
+                    TYPE_PATTERN[t].match(attr['type'])
+                    for t in ('DECIMAL', 'INTEGER', 'FLOAT')),
+                string=any(
+                    TYPE_PATTERN[t].match(attr['type'])
+                    for t in ('ENUM', 'TEMPORAL', 'STRING')),
+                is_blob=bool(
+                    TYPE_PATTERN['INTERNAL_BLOB'].match(attr['type'])),
+                uuid=False, is_attachment=False, is_filepath=False,
+                adapter=None,
                 store=None, is_external=False, sql_expression=None)
 
             if any(TYPE_PATTERN[t].match(attr['type']) for t in ('INTEGER', 'FLOAT')):
@@ -254,8 +265,8 @@ class Heading:
                     raise DataJointError('Unknown attribute type `{type}`'.format(**attr)) from None
                 if category == 'FILEPATH' and not _support_filepath_types():
                     raise DataJointError("""
-                        The filepath data type is disabled until complete validation. 
-                        To turn it on as experimental feature, set the environment variable 
+                        The filepath data type is disabled until complete validation.
+                        To turn it on as experimental feature, set the environment variable
                         {env} = TRUE or upgrade datajoint.
                         """.format(env=FILEPATH_FEATURE_SWITCH))
                 attr.update(

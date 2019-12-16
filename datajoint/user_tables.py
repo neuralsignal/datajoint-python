@@ -12,9 +12,11 @@ _base_regexp = r'[a-z][a-z0-9]*(_[a-z][a-z0-9]*)*'
 
 # attributes that trigger instantiation of user classes
 supported_class_attrs = {
-    'key_source', 'describe', 'alter', 'heading', 'populate', 'progress', 'primary_key', 'proj', 'aggr',
+    'key_source', 'describe', 'alter', 'heading', 'populate', 'progress',
+    'primary_key', 'proj', 'aggr',
     'fetch', 'fetch1', 'head', 'tail',
-    'insert', 'insert1', 'drop', 'drop_quick', 'delete', 'delete_quick'}
+    'insert', 'insert1', 'insert1p', 'part_tables',
+    'drop', 'drop_quick', 'delete', 'delete_quick'}
 
 
 class OrderedClass(type):
@@ -78,6 +80,10 @@ class UserTable(Table, metaclass=OrderedClass):
         raise NotImplementedError('Subclasses of Table must implement the property "definition"')
 
     @ClassProperty
+    def name(cls):
+        return cls.__name__
+
+    @ClassProperty
     def connection(cls):
         return cls._connection
 
@@ -88,13 +94,13 @@ class UserTable(Table, metaclass=OrderedClass):
         """
         if cls._prefix is None:
             raise AttributeError('Class prefix is not defined!')
-        return cls._prefix + from_camel_case(cls.__name__)
+        return cls._prefix + from_camel_case(cls.name)
 
     @ClassProperty
     def full_table_name(cls):
         if cls not in {Manual, Imported, Lookup, Computed, Part, UserTable}:
             if cls.database is None:
-                raise DataJointError('Class %s is not properly declared (schema decorator not applied?)' % cls.__name__)
+                raise DataJointError('Class %s is not properly declared (schema decorator not applied?)' % cls.name)
             return r"`{0:s}`.`{1:s}`".format(cls.database, cls.table_name)
 
 

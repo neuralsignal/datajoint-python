@@ -19,13 +19,18 @@ DEFAULT_SUBFOLDING = (2, 2)  # subfolding for external storage in filesystem.  2
 validators = collections.defaultdict(lambda: lambda value: True)
 validators['database.port'] = lambda a: isinstance(a, int)
 
-Role = Enum('Role', 'manual lookup imported computed job')
+Role = Enum(
+    'Role', 'manual lookup imported computed job settingstable autocomputed autoimported'
+)
 role_to_prefix = {
     Role.manual: '',
     Role.lookup: '#',
     Role.imported: '_',
     Role.computed: '__',
-    Role.job: '~'
+    Role.job: '~',
+    Role.autocomputed: '_#',
+    Role.autoimported: '#_',
+    Role.settingstable: '##'
 }
 prefix_to_role = dict(zip(role_to_prefix.values(), role_to_prefix))
 
@@ -45,7 +50,8 @@ default = OrderedDict({
     'display.show_tuple_count': True,
     'database.use_tls': None,
     'enable_python_native_blobs': False,  # python-native/dj0 encoding support
-    'enable_python_pickle_blobs': False
+    'enable_python_pickle_blobs': False,
+    'enable_automakers': False
 })
 
 logger = logging.getLogger(__name__)

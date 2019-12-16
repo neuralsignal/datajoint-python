@@ -14,11 +14,15 @@ except:
     diagram_active = False
 
 from .user_tables import Manual, Imported, Computed, Lookup, Part
+from .auto_tables import AutoComputed, AutoImported, Settingstable
 from .errors import DataJointError
 from .table import lookup_class_name
 
 
-user_table_classes = (Manual, Lookup, Computed, Imported, Part)
+user_table_classes = (
+    Manual, Lookup, Computed, Imported, Part, AutoComputed, AutoImported,
+    Settingstable
+)
 
 
 class _AliasNode:
@@ -266,11 +270,17 @@ else:
                                  size=0.05*scale, fixed=True),
                 Manual: dict(shape='box', color="#00FF0030", fontcolor='darkgreen', fontsize=round(scale*10),
                              size=0.4*scale, fixed=False),
+                Settingstable: dict(shape='box', color="#00FF0030", fontcolor='darkgreen', fontsize=round(scale*10),
+                             size=0.4*scale, fixed=False),
                 Lookup: dict(shape='plaintext', color='#00000020', fontcolor='black', fontsize=round(scale*8),
                              size=0.4*scale, fixed=False),
                 Computed: dict(shape='ellipse', color='#FF000020', fontcolor='#7F0000A0', fontsize=round(scale*10),
                                size=0.3*scale, fixed=True),
                 Imported: dict(shape='ellipse', color='#00007F40', fontcolor='#00007FA0', fontsize=round(scale*10),
+                               size=0.4*scale, fixed=False),
+                AutoComputed: dict(shape='ellipse', color='#FF000020', fontcolor='#7F0000A0', fontsize=round(scale*10),
+                               size=0.3*scale, fixed=True),
+                AutoImported: dict(shape='ellipse', color='#00007F40', fontcolor='#00007FA0', fontsize=round(scale*10),
                                size=0.4*scale, fixed=False),
                 Part: dict(shape='plaintext', color='#0000000', fontcolor='black', fontsize=round(scale*8),
                            size=0.1*scale, fixed=False)}

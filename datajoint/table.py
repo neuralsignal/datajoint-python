@@ -152,10 +152,19 @@ class Table(QueryExpression):
                         self_table_name + '__', ''
                     )
 
-                    part_table = getattr(
-                        self,
-                        to_camel_case(part_table_name)
-                    )
+                    try:
+                        part_table = getattr(
+                            self,
+                            to_camel_case(part_table_name)
+                        )
+                    except AttributeError:
+                        raise DataJointError((
+                            'part table {child_table_name} in SQL database, '
+                            'but not attribute of master {self_table_name}'
+                        ).format(
+                            child_table_name=child_table_name,
+                            self_table_name=self_table_name
+                        ))
 
                     part_tables.append(part_table)
 

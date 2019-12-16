@@ -14,6 +14,7 @@ from .external import ExternalMapping
 from .heading import Heading
 from .utils import user_choice, to_camel_case
 from .user_tables import Part, Computed, Imported, Manual, Lookup
+from .auto_tables import AutoComputed, AutoImported, Settingstable
 from .table import lookup_class_name, Log, FreeTable
 import types
 
@@ -120,7 +121,10 @@ class Schema:
         tables = [
             row[0] for row in self.connection.query('SHOW TABLES in `%s`' % self.database)
             if lookup_class_name('`{db}`.`{tab}`'.format(db=self.database, tab=row[0]), context, 0) is None]
-        master_classes = (Lookup, Manual, Imported, Computed)
+        master_classes = (
+            Settingstable, AutoImported, AutoComputed,
+            Lookup, Manual, Imported, Computed,
+        )
         part_tables = []
         for table_name in tables:
             class_name = to_camel_case(table_name)
@@ -214,8 +218,34 @@ class Schema:
         """
         context = context or self.context or inspect.currentframe().f_back.f_locals
         if issubclass(cls, Part):
-            raise DataJointError('The schema decorator should not be applied to Part relations')
-        self.process_table_class(cls, context=dict(context, self=cls, **{cls.__name__: cls}))
+            raise DataJointError(
+                'The schema decorator should not be applied to Part relations'
+            )
+
+        is_automaker = issubclass(
+            cls, (AutoComputed, AutoImported, Settingstable))
+
+        if not config['enable_automakers'] and is_automaker:
+            raise DataJointError(
+                'Enable automakers in config to use '
+                'AutoComputed and AutoImported tables.'
+            )
+
+        elif not config['enable_python_native_blobs'] and is_automaker:
+            raise DataJointError(
+                'Enable native python blobs to use'
+                'Autocomputed and AutoImported tables.'
+            )
+
+        if issubclass(cls, (AutoComputed, AutoImported)):
+            context[cls.settings_table.name] = self(
+                cls.settings_table, context=context
+            )
+            cls.set_true_definition()
+
+        self.process_table_class(
+            cls, context=dict(context, self=cls, **{cls.name: cls})
+        )
 
         # Process part relations
         for part in ordered_dir(cls):
@@ -225,7 +255,7 @@ class Schema:
                     part._master = cls
                     # allow addressing master by name or keyword 'master'
                     self.process_table_class(part, context=dict(
-                        context, master=cls, self=part, **{cls.__name__: cls}))
+                        context, master=cls, self=part, **{cls.name: cls}))
         return cls
 
     @property
