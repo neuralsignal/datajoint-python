@@ -37,7 +37,7 @@ class Settingstable(UserTable):
     settings_name : varchar(63)
     ---
     description = null : varchar(4000) # any string to describe setting
-    func : longblob # two-tuple of strings or callable; dictionary contains git
+    func : longblob # two-tuple of strings (module, function) or callable
     global_settings : longblob # dictionary
     entry_settings : longblob # dictionary
     fetch_method = 'fetch1' : enum('fetch', 'fetch1', 'farfetch', 'farfetch1')
@@ -297,11 +297,13 @@ class Settingstable(UserTable):
 
     @staticmethod
     def _get_func(func):
-        """check function
+        """get function
         """
 
-        if isinstance(func, tuple):
-            assert len(func) == 2
+        def func_from_tuple(func):
+            """get function from tuple
+            """
+
             module = func[0]
             func = func[1]
 
@@ -309,8 +311,29 @@ class Settingstable(UserTable):
             try:
                 module = importlib.import_module(module)
                 func = getattr(module, func)
-            except Exception:
-                raise DataJointError('could not load function')
+            except Exception as e:
+                raise DataJointError(
+                    'could not load function: {}'.format(e))
+
+        if isinstance(func, tuple):
+            if len(func) == 4:
+                # if tuple is of length four it is considered a class
+                # with initialization
+                cls = func_from_tuple(func)
+                args = func[2]
+                kwargs = func[3]
+                assert isinstance(args, Sequence)
+                assert isinstance(args, collections.Mapping)
+                assert hasattr(cls, '__init__')
+                func = cls(*args, **kwargs)
+            elif len(func) == 2:
+                # here it is simply considered a function
+                func = func_from_tuple(func)
+            else:
+                raise DataJointError(
+                    'tuple must have two or four '
+                    'elements, it has {}'.format(len(func))
+                )
 
         return func
 
@@ -323,7 +346,7 @@ class Settingstable(UserTable):
             or inspect.ismodule(func)
         ):
             raise DataJointError(
-                'function must be two-tuple or callable function.'
+                'function must be two/four-tuple or callable function.'
             )
 
         module = inspect.getmodule(func)
