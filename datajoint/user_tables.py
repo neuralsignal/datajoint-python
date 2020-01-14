@@ -171,7 +171,7 @@ class Part(UserTable):
 
     @ClassProperty
     def table_name(cls):
-        return None if cls.master is None else cls.master.table_name + '__' + from_camel_case(cls.__name__)
+        return None if cls.master is None else cls.master.table_name + '__' + from_camel_case(cls.name)
 
     def delete(self, force=False):
         """
