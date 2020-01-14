@@ -489,7 +489,7 @@ class Settingstable(UserTable):
                 'Git commits have occured since insertion.'
             )
         elif new_modified and not old_modified:
-            warnings.warng(
+            warnings.warn(
                 'Files have been modified since insertion.'
             )
 
