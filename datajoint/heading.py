@@ -35,7 +35,12 @@ class Attribute(namedtuple('_Attribute', default_attribute_properties)):
         """
         :return: datatype (as string) in database. In most cases, it is the same as self.type
         """
-        return UUID_DATA_TYPE if self.uuid else self.type
+        if self.uuid:
+            return UUID_DATA_TYPE
+        elif self.adapter is None:
+            return self.type
+        else:
+            return self.adapter.attribute_type
 
     @property
     def sql_comment(self):
