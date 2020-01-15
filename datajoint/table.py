@@ -128,9 +128,7 @@ class Table(QueryExpression):
 
     @property
     def part_tables(self):
-        """
-        Does not work with aliased part tables.
-
+        """a tuple of all part tables
         :return: tuple of part tables of self
         """
 
@@ -142,7 +140,14 @@ class Table(QueryExpression):
             part_tables = []
             self_table_name = self.full_table_name.replace('`', '')
 
-            for child_table_name in self.children():
+            for child_table_name, child_info in self.children().items():
+
+                if child_info['aliased']:
+                    aliased_children = self.connection.dependencies.children(
+                        child_table_name
+                    )
+                    # there should only be one aliased child
+                    child_table_name = list(aliased_children.keys())[0]
 
                 child_table_name = child_table_name.replace('`', '')
 
@@ -158,13 +163,9 @@ class Table(QueryExpression):
                             to_camel_case(part_table_name)
                         )
                     except AttributeError:
-                        raise DataJointError((
-                            'part table {child_table_name} in SQL database, '
-                            'but not attribute of master {self_table_name}'
-                        ).format(
-                            child_table_name=child_table_name,
-                            self_table_name=self_table_name
-                        ))
+                        part_table = FreeTable(
+                            self.connection, child_table_name
+                        )
 
                     part_tables.append(part_table)
 
