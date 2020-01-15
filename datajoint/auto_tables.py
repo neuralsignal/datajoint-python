@@ -713,7 +713,7 @@ class AutoMake(AutoPopulate):
         """
         rel.populate() calls rel.make(key) for every primary key in self.key_source
         for which there is not already a tuple in rel.
-        :param settings_name:
+        :param settings_name: name of settings to use for autopopulation from SettingsTable.
         :param restrictions: a list of restrictions each restrict (rel.key_source - target.proj())
         :param suppress_errors: if True, do not terminate execution.
         :param return_exception_objects: return error objects instead of just error messages
