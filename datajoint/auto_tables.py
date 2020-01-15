@@ -421,11 +421,13 @@ class Settingstable(UserTable):
             parts = os.path.split(dir_name)
 
             if dir_name in parts:
-                warnings.warn((
-                    'No git directory was found for module in {path} for '
-                    'function {func}. '
-                    'Implementation of git version control recommended.'
-                ).format(path=module_path, func=func))
+                # only throw a warning if not package and versioning exists
+                if 'package' not in git_status and 'version' not in git_status:
+                    warnings.warn((
+                        'No git directory was found for module in {path} for '
+                        'function {func}. '
+                        'Implementation of git version control recommended.'
+                    ).format(path=module_path, func=func))
 
                 break
 
