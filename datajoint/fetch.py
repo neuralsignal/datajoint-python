@@ -30,15 +30,16 @@ def to_dicts(recarray):
         yield OrderedDict(zip(recarray.dtype.names, rec.tolist()))
 
 
-def _get(connection, attr, data, squeeze, download_path):
+def _get(connection, attr, data, squeeze, download_path, apply_adapter):
     """
-    This function is called for every attribute 
+    This function is called for every attribute
 
     :param connection: a dj.Connection object
     :param attr: attribute name from the table's heading
     :param data: literal value fetched from the table
     :param squeeze: if True squeeze blobs
     :param download_path: for fetches that download data, e.g. attachments
+    :param apply_adapter: whether to apply the adapter
     :return: unpacked data
     """
     if data is None:
@@ -47,7 +48,7 @@ def _get(connection, attr, data, squeeze, download_path):
     extern = connection.schemas[attr.database].external[attr.store] if attr.is_external else None
 
     # apply attribute adapter if present
-    adapt = attr.adapter.get if attr.adapter else lambda x: x
+    adapt = attr.adapter.get if attr.adapter and apply_adapter else lambda x: x
 
     if attr.is_filepath:
         return adapt(extern.download_filepath(uuid.UUID(bytes=data))[0])
@@ -83,7 +84,7 @@ def _get(connection, attr, data, squeeze, download_path):
         return adapt(str(local_filepath))  # download file from remote store
 
     return adapt(uuid.UUID(bytes=data) if attr.uuid else (
-            blob.unpack(extern.get(uuid.UUID(bytes=data)) if attr.is_external else data, squeeze=squeeze) 
+            blob.unpack(extern.get(uuid.UUID(bytes=data)) if attr.is_external else data, squeeze=squeeze)
             if attr.is_blob else data))
 
 
@@ -112,7 +113,7 @@ class Fetch:
         self._expression = expression
 
     def __call__(self, *attrs, offset=None, limit=None, order_by=None, format=None, as_dict=None,
-                 squeeze=False, download_path='.'):
+                 squeeze=False, download_path='.', apply_adapter=True):
         """
         Fetches the expression results from the database into an np.array or list of dictionaries and
         unpacks blob attributes.
@@ -132,6 +133,7 @@ class Fetch:
                 Defaults to False for .fetch() and to True for .fetch('KEY')
         :param squeeze:  if True, remove extra dimensions from arrays
         :param download_path: for fetches that download data, e.g. attachments
+        :param apply_adapter: whether to apply the adapter
         :return: the contents of the relation in the form of a structured numpy.array or a dict list
         """
         if order_by is not None:
@@ -166,7 +168,7 @@ class Fetch:
                           'Consider setting a limit explicitly.')
             limit = 8000000000  # just a very large number to effect no limit
 
-        get = partial(_get, self._expression.connection, squeeze=squeeze, download_path=download_path)
+        get = partial(_get, self._expression.connection, squeeze=squeeze, download_path=download_path, apply_adapter=apply_adapter)
         if attrs:  # a list of attributes provided
             attributes = [a for a in attrs if not is_key(a)]
             ret = self._expression.proj(*attributes).fetch(
@@ -210,7 +212,7 @@ class Fetch1:
     def __init__(self, relation):
         self._expression = relation
 
-    def __call__(self, *attrs, squeeze=False, download_path='.'):
+    def __call__(self, *attrs, squeeze=False, download_path='.', apply_adapter=True):
         """
         Fetches the expression results from the database when the expression is known to yield only one entry.
 
@@ -224,6 +226,7 @@ class Fetch1:
         :params *attrs: attributes to return when expanding into a tuple. If empty, the return result is a dict
         :param squeeze:  When true, remove extra dimensions from arrays in attributes
         :param download_path: for fetches that download data, e.g. attachments
+        :param apply_adapter: whether to apply the adapter
         :return: the one tuple in the relation in the form of a dict
         """
         heading = self._expression.heading
@@ -234,7 +237,7 @@ class Fetch1:
             if not ret or cur.fetchone():
                 raise DataJointError('fetch1 should only be used for relations with exactly one tuple')
             ret = OrderedDict((name, _get(self._expression.connection, heading[name], ret[name],
-                                          squeeze=squeeze, download_path=download_path))
+                                          squeeze=squeeze, download_path=download_path, apply_adapter=apply_adapter))
                               for name in heading.names)
         else:  # fetch some attributes, return as tuple
             attributes = [a for a in attrs if not is_key(a)]
