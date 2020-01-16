@@ -236,9 +236,6 @@ class Heading:
             attr['unsupported'] = not any((attr['is_blob'], attr['numeric'], attr['numeric']))
             attr.pop('Extra')
 
-            # keep original sql type for adapted attribute
-            sql_type = attr['type']
-
             # process custom DataJoint types
             special = re.match(r':(?P<type>[^:]+):(?P<comment>.*)', attr['comment'])
             if special:
@@ -247,6 +244,11 @@ class Heading:
             # process adapted attribute types
             if special and TYPE_PATTERN['ADAPTED'].match(attr['type']):
                 adapter_name = special['type']
+                # keeping track of attribute type used in adapter
+                true_type = re.match(r'(?P<comment>.*);(?P<type>[^:]+);', attr['comment'])
+                true_type = true_type.groupdict()
+                attr['comment'] = true_type['comment']
+                # if adapter in context use it, if not create artificial adapter
                 try:
                     if context is None:
                         raise DataJointError('Declaration context is not set')
@@ -255,7 +257,7 @@ class Heading:
                     # if no adapter, then delay the error until the first invocation
                     # but keep at least sql type
                     class AttrA(AttributeAdapter):
-                        attribute_type = sql_type
+                        attribute_type = true_type['type']
                     attr.update(adapter=AttrA())
                 else:
                     attr.update(type=attr['adapter'].attribute_type)

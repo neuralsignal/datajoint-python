@@ -397,8 +397,8 @@ def substitute_special_type(match, category, foreign_key_sql, context):
     elif category in EXTERNAL_TYPES:
         if category == 'FILEPATH' and not _support_filepath_types():
             raise DataJointError("""
-            The filepath data type is disabled until complete validation. 
-            To turn it on as experimental feature, set the environment variable 
+            The filepath data type is disabled until complete validation.
+            To turn it on as experimental feature, set the environment variable
             {env} = TRUE or upgrade datajoint.
             """.format(env=FILEPATH_FEATURE_SWITCH))
         match['store'] = match['type'].split('@', 1)[1]
@@ -409,6 +409,8 @@ def substitute_special_type(match, category, foreign_key_sql, context):
     elif category == 'ADAPTED':
         adapter = get_adapter(context, match['type'])
         match['type'] = adapter.attribute_type
+        # add attribute type used to comment
+        match['comment'] = '{comment};{type};'.format(**match)
         category = match_type(match['type'])
         if category in SPECIAL_TYPES:
             # recursive redefinition from user-defined datatypes.
