@@ -236,6 +236,9 @@ class Heading:
             attr['unsupported'] = not any((attr['is_blob'], attr['numeric'], attr['numeric']))
             attr.pop('Extra')
 
+            # keep original sql type for adapted attribute
+            sql_type = attr['type']
+
             # process custom DataJoint types
             special = re.match(r':(?P<type>[^:]+):(?P<comment>.*)', attr['comment'])
             if special:
@@ -250,7 +253,10 @@ class Heading:
                     attr.update(adapter=get_adapter(context, adapter_name))
                 except DataJointError:
                     # if no adapter, then delay the error until the first invocation
-                    attr.update(adapter=AttributeAdapter())
+                    # but keep at least sql type
+                    class AttrA(AttributeAdapter):
+                        attribute_type = sql_type
+                    attr.update(adapter=AttrA())
                 else:
                     attr.update(type=attr['adapter'].attribute_type)
                     if not any(r.match(attr['type']) for r in TYPE_PATTERN.values()):
