@@ -21,7 +21,7 @@ __all__ = ['__author__', '__version__',
            'schema', 'create_virtual_module', 'list_schemas',
            'Table', 'FreeTable',
            'Manual', 'Lookup', 'Imported', 'Computed', 'Part',
-           'AutoComputed', 'AutoImported',
+           'AutoComputed', 'AutoImported', 'Settingstable',
            'Not', 'AndList', 'U', 'Diagram', 'Di', 'ERD',
            'set_password', 'kill',
            'MatCell', 'MatStruct', 'AttributeAdapter',
@@ -34,7 +34,7 @@ from .schema import Schema as schema
 from .schema import create_virtual_module, list_schemas
 from .table import Table, FreeTable
 from .user_tables import Manual, Lookup, Imported, Computed, Part
-from .auto_tables import AutoComputed, AutoImported
+from .auto_tables import AutoComputed, AutoImported, Settingstable
 from .expression import Not, AndList, U
 from .diagram import Diagram
 from .admin import set_password, kill
