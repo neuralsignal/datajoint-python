@@ -147,7 +147,7 @@ class Table(QueryExpression):
                         child_table_name
                     )
                     # there should only be one aliased child
-                    child_table_name = list(aliased_children.keys())[0]
+                    child_table_name = list(aliased_children)[0]
 
                 child_table_name = child_table_name.replace('`', '')
 
