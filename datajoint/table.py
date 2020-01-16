@@ -452,7 +452,7 @@ class Table(QueryExpression):
         self._log(query[:255])
         return count
 
-    def delete(self, verbose=True):
+    def delete(self, verbose=True, force=False):
         """
         Deletes the contents of the table and its dependent tables, recursively.
         User is prompted for confirmation if config['safemode'] is set to True.
@@ -527,7 +527,7 @@ class Table(QueryExpression):
                     if verbose:
                         print('The delete is pending within the ongoing transaction.')
                 else:
-                    if not safe or user_choice("Proceed?", default='no') == 'yes':
+                    if not safe or force or user_choice("Proceed?", default='no') == 'yes':
                         conn.commit_transaction()
                         if verbose or safe:
                             print('Committed.')
