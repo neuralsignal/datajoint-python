@@ -452,11 +452,14 @@ class Table(QueryExpression):
         self._log(query[:255])
         return count
 
-    def delete(self, verbose=True, force=False):
+    def _delete(self, verbose=True, force=False):
+        """delete helper function. Called in delete.
         """
-        Deletes the contents of the table and its dependent tables, recursively.
-        User is prompted for confirmation if config['safemode'] is set to True.
-        """
+        # message and commit transaction are returned as well as connection
+        message = ''
+        commit_transaction = False
+
+        # copied from old delete method
         conn = self.connection
         already_in_transaction = conn.in_transaction
         safe = config['safemode']
@@ -499,7 +502,7 @@ class Table(QueryExpression):
                         if isinstance(r, _RenameMap) else r)
                     for r in restrictions[name]])
         if safe:
-            print('About to delete:')
+            message += 'About to delete'
 
         if not already_in_transaction:
             conn.start_transaction()
@@ -510,7 +513,7 @@ class Table(QueryExpression):
                     count = table.delete_quick(get_count=True)
                     total += count
                     if (verbose or safe) and count:
-                        print('{table}: {count} items'.format(table=name, count=count))
+                        message += '\n{table}: {count} items'.format(table=name, count=count)
         except:
             # Delete failed, perhaps due to insufficient privileges. Cancel transaction.
             if not already_in_transaction:
@@ -519,22 +522,39 @@ class Table(QueryExpression):
         else:
             assert not (already_in_transaction and safe)
             if not total:
-                print('Nothing to delete')
+                message += ('\nNothing to delete')
                 if not already_in_transaction:
                     conn.cancel_transaction()
             else:
                 if already_in_transaction:
                     if verbose:
-                        print('The delete is pending within the ongoing transaction.')
+                        message = ('\nThe delete is pending within the ongoing transaction.')
                 else:
-                    if not safe or force or user_choice("Proceed?", default='no') == 'yes':
-                        conn.commit_transaction()
+                    if not safe or force:
+                        commit_transaction = True
                         if verbose or safe:
                             print('Committed.')
                     else:
                         conn.cancel_transaction()
                         if verbose or safe:
-                            print('Cancelled deletes.')
+                            message = ('\nCancelled deletes.')
+
+        return message, commit_transaction, conn
+
+    def delete(self, verbose=True, force=False):
+        """
+        Deletes the contents of the table and its dependent tables, recursively.
+        User is prompted for confirmation if config['safemode'] is set to True.
+        """
+        safe = config['safemode']
+        message, commit_transaction, conn = self._delete(verbose, force)
+
+        print(message)
+
+        if commit_transaction or user_choice("Proceed?", default='no') == 'yes':
+            conn.commit_transaction()
+            if verbose or safe:
+                print('Commited.')
 
     def drop_quick(self):
         """
