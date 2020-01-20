@@ -522,7 +522,7 @@ class Table(QueryExpression):
         else:
             assert not (already_in_transaction and safe)
             if not total:
-                message += ('\nNothing to delete')
+                message = ('Nothing to delete')
                 if not already_in_transaction:
                     conn.cancel_transaction()
             else:
@@ -530,14 +530,7 @@ class Table(QueryExpression):
                     if verbose:
                         message = ('\nThe delete is pending within the ongoing transaction.')
                 else:
-                    if not safe or force:
-                        commit_transaction = True
-                        if verbose or safe:
-                            print('Committed.')
-                    else:
-                        conn.cancel_transaction()
-                        if verbose or safe:
-                            message = ('\nCancelled deletes.')
+                    commit_transaction = not safe or force
 
         return message, commit_transaction, conn
 
@@ -555,6 +548,10 @@ class Table(QueryExpression):
             conn.commit_transaction()
             if verbose or safe:
                 print('Commited.')
+        else:
+            conn.cancel_transaction()
+            if verbose or safe:
+                message = ('\nCancelled deletes.')
 
     def drop_quick(self):
         """
