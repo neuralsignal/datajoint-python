@@ -13,8 +13,10 @@ from .jobs import JobTable
 from .external import ExternalMapping
 from .heading import Heading
 from .utils import user_choice, to_camel_case
-from .user_tables import Part, Computed, Imported, Manual, Lookup
-from .auto_tables import AutoComputed, AutoImported, Settingstable
+from .user_tables import Computed, Imported, Manual, Lookup
+from .part_table import Part
+from .auto_tables import AutoComputed, AutoImported
+from .settings_table import Settingstable
 from .table import lookup_class_name, Log, FreeTable
 import types
 
