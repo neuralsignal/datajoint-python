@@ -346,11 +346,11 @@ class Table(QueryExpression):
 
             if isinstance(row, np.void):  # np.array
                 check_fields(row.dtype.fields)
-                attributes = [self._make_placeholder(name, row[name], heading, ignore_extra_fields)
+                attributes = [self._make_placeholder(name, row[name], ignore_extra_fields)
                               for name in heading if name in row.dtype.fields]
             elif isinstance(row, collections.abc.Mapping):  # dict-based
                 check_fields(row)
-                attributes = [self._make_placeholder(name, row[name], heading, ignore_extra_fields)
+                attributes = [self._make_placeholder(name, row[name], ignore_extra_fields)
                               for name in heading if name in row]
             else:  # positional
                 try:
@@ -362,7 +362,7 @@ class Table(QueryExpression):
                 except TypeError:
                     raise DataJointError('Datatype %s cannot be inserted' % type(row))
                 else:
-                    attributes = [self._make_placeholder(name, value, heading, ignore_extra_fields)
+                    attributes = [self._make_placeholder(name, value, ignore_extra_fields)
                                   for name, value in zip(heading, row)]
             if ignore_extra_fields:
                 attributes = [a for a in attributes if a is not None]
@@ -399,7 +399,7 @@ class Table(QueryExpression):
             except DuplicateError as err:
                 raise err.suggest('To ignore duplicate entries in insert, set skip_duplicates=True') from None
 
-    def _make_placeholder(self, name, value, heading, ignore_extra_fields):
+    def _make_placeholder(self, name, value, ignore_extra_fields):
         """
         For a given attribute `name` with `value`, return its processed value or value placeholder
         as a string to be included in the query and the value, if any, to be submitted for
@@ -407,9 +407,9 @@ class Table(QueryExpression):
         :param name:  name of attribute to be inserted
         :param value: value of attribute to be inserted
         """
-        if ignore_extra_fields and name not in heading:
+        if ignore_extra_fields and name not in self.heading:
             return None
-        attr = heading[name]
+        attr = self.heading[name]
 
         if attr.adapter:
             value = attr.adapter.put(value)
@@ -442,7 +442,6 @@ class Table(QueryExpression):
             elif attr.numeric:
                 value = str(int(value) if isinstance(value, bool) else value)
         return name, placeholder, value
-
 
     def delete_quick(self, get_count=False):
         """
