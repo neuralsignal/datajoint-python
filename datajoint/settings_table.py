@@ -15,7 +15,7 @@ from .user_tables import UserTable, _base_regexp
 from .expression import QueryExpression
 from .utils import ClassProperty, from_camel_case, safe_write
 from .errors import DataJointError
-from .settings import config
+from .settings import config, prefix_to_role
 
 
 if sys.version_info[1] < 6:
@@ -160,7 +160,7 @@ class Settingstable(UserTable):
                         )
                 elif '.' not in table:
                     raise DataJointError(
-                        'schema not specified or separated with a period '
+                        'schema not specified or not separated with a period '
                         'in table name {}.'.format(table)
                     )
                 else:
@@ -179,19 +179,10 @@ class Settingstable(UserTable):
                         + q + u + table_name + q)
 
                     # check manual, imported and computed, autocomputed, autoimported
-                    # TODO substitute with get_tier
-                    if combiner('') in nodes:
-                        table = combiner('')
-                    elif combiner('_') in nodes:
-                        table = combiner('')
-                    elif combiner('__') in nodes:
-                        table = combiner('__')
-                    elif combiner('_#') in nodes:
-                        table = combiner('_#')
-                    elif combiner('#_') in nodes:
-                        table = combiner('#_')
-                    elif combiner('#') in nodes:
-                        table = combiner('#')
+                    for prefix in prefix_to_role:
+                        if combiner(prefix) in nodes:
+                            table = combiner(prefix)
+                            break
                     else:
                         raise DataJointError((
                             'When processing fetch tables, '
