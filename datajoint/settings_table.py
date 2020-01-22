@@ -7,13 +7,16 @@ import collections
 import warnings
 import sys
 import os
+from pathlib import Path
 import numpy as np
 
 from .table import FreeTable
 from .user_tables import UserTable, _base_regexp
 from .expression import QueryExpression
-from .utils import ClassProperty, from_camel_case
+from .utils import ClassProperty, from_camel_case, safe_write
 from .errors import DataJointError
+from .settings import config
+
 
 if sys.version_info[1] < 6:
     dict = collections.OrderedDict
@@ -311,7 +314,7 @@ class Settingstable(UserTable):
                 raise DataJointError(
                     'could not load function: {}'.format(e))
 
-        if isinstance(func, tuple):
+        if isinstance(func, (tuple, list)):
             if len(func) == 4:
                 # if tuple is of length four it is considered a class
                 # with initialization
@@ -324,7 +327,37 @@ class Settingstable(UserTable):
                 func = cls(*args, **kwargs)
             elif len(func) == 2:
                 # here it is simply considered a function
-                func = func_from_tuple(func)
+                if isinstance(func[0], bytes):
+                    # in this case it is a python file that was saved
+                    assert config['tmp_folder'] is not None, (
+                        "Must provide tmp folder in config if "
+                        "inserting/fetching python files into settings table."
+                    )
+
+                    filename, content = func[0].split(b'\0', 1)
+
+                    temporary_path = Path(config['tmp_folder']) / filename
+
+                    safe_write(temporary_path, content)
+
+                    func = (
+                        os.path.splitext(filename)[0],
+                        func[1]
+                    )
+
+                    # change working directory for priority import
+                    cwd = os.getcwd()
+                    os.chdir(config['tmp_folder'])
+                    try:
+                        func = func_from_tuple(func)
+                        os.chdir(cwd)
+                    except DataJointError as e:
+                        os.chdir(cwd)
+                        raise e
+
+                else:
+                    # a normal function was saved
+                    func = func_from_tuple(func)
             else:
                 raise DataJointError(
                     'tuple must have two or four '
@@ -581,13 +614,37 @@ class Settingstable(UserTable):
                     '"{}" has changed its default value'.format(param)
                 )
 
-    def _get_func_attr(self, func):
-        """convert to function attribute and set self.func
+    @staticmethod
+    def _get_insert_func(func):
+        """get function ready for insertion
         """
 
-        attr = {'func': func}
+        if isinstance(func, (tuple, list)):
+            if len(func) == 2:
+                # if python file encode it into bytes
+                if func[0].endswith('.py'):
+                    if not os.path.exists(func[0]):
+                        raise DataJointError(
+                            'python file {} does not exist.'.format(func[0])
+                        )
+                    # init path object
+                    python_file = Path(func[0])
 
-        func = self._get_func(func)
+                    func = ((
+                        str.encode(python_file.name)
+                        + b'\0'
+                        + python_file.read_bytes()
+                    ), func[1])
+
+        return func
+
+    def _get_func_attr(self, func):
+        """convert to function attribute and check function
+        """
+
+        attr = {'func': self._get_insert_func(func)}
+
+        func = self._get_func(attr['func'])
         self._check_func(func)
         attr.update(self._get_git_status(func))
         attr.update(self._get_func_params(func))
