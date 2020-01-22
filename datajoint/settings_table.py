@@ -176,6 +176,7 @@ class Settingstable(UserTable):
                         + q + u + table_name + q)
 
                     # check manual, imported and computed, autocomputed, autoimported
+                    # TODO substitute with get_tier
                     if combiner('') in nodes:
                         table = combiner('')
                     elif combiner('_') in nodes:

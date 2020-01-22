@@ -20,6 +20,18 @@ class key:
     pass
 
 
+def _get_download_path(download_path):
+    """function to get download_path
+    """
+
+    if download_path is None and config['tmp_folder'] is None:
+        return '.'
+    elif download_path is not None:
+        return download_path
+    else:
+        return config['tmp_folder']
+
+
 def is_key(attr):
     return attr is key or attr == 'KEY'
 
@@ -44,6 +56,9 @@ def _get(connection, attr, data, squeeze, download_path, apply_adapter):
     """
     if data is None:
         return
+
+    # get correct download path
+    download_path = _get_download_path(download_path)
 
     extern = connection.schemas[attr.database].external[attr.store] if attr.is_external else None
 
@@ -113,7 +128,7 @@ class Fetch:
         self._expression = expression
 
     def __call__(self, *attrs, offset=None, limit=None, order_by=None, format=None, as_dict=None,
-                 squeeze=False, download_path='.', apply_adapter=True):
+                 squeeze=False, download_path=None, apply_adapter=True):
         """
         Fetches the expression results from the database into an np.array or list of dictionaries and
         unpacks blob attributes.
@@ -212,7 +227,7 @@ class Fetch1:
     def __init__(self, relation):
         self._expression = relation
 
-    def __call__(self, *attrs, squeeze=False, download_path='.', apply_adapter=True):
+    def __call__(self, *attrs, squeeze=False, download_path=None, apply_adapter=True):
         """
         Fetches the expression results from the database when the expression is known to yield only one entry.
 
