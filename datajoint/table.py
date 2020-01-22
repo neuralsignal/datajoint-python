@@ -691,20 +691,8 @@ class Table(QueryExpression):
         if attrname in self.heading.primary_key:
             raise DataJointError('Cannot update a key value.')
 
-        attr = self.heading[attrname]
+        attrname, placeholder, value = self._make_placeholder(attrname, value, False)
 
-        if attr.is_blob:
-            value = blob.pack(value)
-            placeholder = '%s'
-        elif attr.numeric:
-            if value is None or np.isnan(np.float(value)):  # nans are turned into NULLs
-                placeholder = 'NULL'
-                value = None
-            else:
-                placeholder = '%s'
-                value = str(int(value) if isinstance(value, bool) else value)
-        else:
-            placeholder = '%s'
         command = "UPDATE {full_table_name} SET `{attrname}`={placeholder} {where_clause}".format(
             full_table_name=self.from_clause,
             attrname=attrname,
