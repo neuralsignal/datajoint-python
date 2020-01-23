@@ -332,45 +332,8 @@ class Table(QueryExpression):
             :return: a dict with fields 'names', 'placeholders', 'values'
             """
 
-            def check_fields(fields):
-                """
-                Validates that all items in `fields` are valid attributes in the heading
-                :param fields: field names of a tuple
-                """
-                if field_list is None:
-                    if not ignore_extra_fields:
-                        for field in fields:
-                            if field not in heading:
-                                raise KeyError(u'`{0:s}` is not in the table heading'.format(field))
-                elif set(field_list) != set(fields).intersection(heading.names):
-                    raise DataJointError('Attempt to insert rows with different fields')
-
-            if isinstance(row, np.void):  # np.array
-                check_fields(row.dtype.fields)
-                attributes = [self._make_placeholder(name, row[name], ignore_extra_fields)
-                              for name in heading if name in row.dtype.fields]
-            elif isinstance(row, collections.abc.Mapping):  # dict-based
-                check_fields(row)
-                attributes = [self._make_placeholder(name, row[name], ignore_extra_fields)
-                              for name in heading if name in row]
-            else:  # positional
-                try:
-                    if len(row) != len(heading):
-                        raise DataJointError(
-                            'Invalid insert argument. Incorrect number of attributes: '
-                            '{given} given; {expected} expected'.format(
-                                given=len(row), expected=len(heading)))
-                except TypeError:
-                    raise DataJointError('Datatype %s cannot be inserted' % type(row))
-                else:
-                    attributes = [self._make_placeholder(name, value, ignore_extra_fields)
-                                  for name, value in zip(heading, row)]
-            if ignore_extra_fields:
-                attributes = [a for a in attributes if a is not None]
-
-            assert len(attributes), 'Empty tuple'
-            row_to_insert = dict(zip(('names', 'placeholders', 'values'), zip(*attributes)))
             nonlocal field_list
+            row_to_insert = self._make_row_to_insert(row, ignore_extra_fields, field_list)
             if field_list is None:
                 # first row sets the composition of the field list
                 field_list = row_to_insert['names']
@@ -399,6 +362,51 @@ class Table(QueryExpression):
                 raise err.suggest('To ignore extra fields in insert, set ignore_extra_fields=True') from None
             except DuplicateError as err:
                 raise err.suggest('To ignore duplicate entries in insert, set skip_duplicates=True') from None
+
+    def _make_row_to_insert(self, row, ignore_extra_fields, field_list):
+        """
+        :param row:  A tuple to insert
+        :return: a dict with fields 'names', 'placeholders', 'values'
+        """
+
+        if isinstance(row, np.void):  # np.array
+            self._check_fields(row.dtype.fields, field_list, ignore_extra_fields)
+            attributes = [self._make_placeholder(name, row[name], ignore_extra_fields)
+                          for name in self.heading if name in row.dtype.fields]
+        elif isinstance(row, collections.abc.Mapping):  # dict-based
+            self._check_fields(row, field_list, ignore_extra_fields)
+            attributes = [self._make_placeholder(name, row[name], ignore_extra_fields)
+                          for name in self.heading if name in row]
+        else:  # positional
+            try:
+                if len(row) != len(self.heading):
+                    raise DataJointError(
+                        'Invalid insert argument. Incorrect number of attributes: '
+                        '{given} given; {expected} expected'.format(
+                            given=len(row), expected=len(self.heading)))
+            except TypeError:
+                raise DataJointError('Datatype %s cannot be inserted' % type(row))
+            else:
+                attributes = [self._make_placeholder(name, value, ignore_extra_fields)
+                              for name, value in zip(self.heading, row)]
+        if ignore_extra_fields:
+            attributes = [a for a in attributes if a is not None]
+
+        assert len(attributes), 'Empty tuple'
+        return dict(zip(('names', 'placeholders', 'values'), zip(*attributes)))
+
+    def _check_fields(self, fields, field_list, ignore_extra_fields):
+        """
+        Validates that all items in `fields` are valid attributes in the heading
+        :param fields: field names of a tuple
+        """
+        if field_list is None:
+            if not ignore_extra_fields:
+                for field in fields:
+                    if field not in self.heading:
+                        raise KeyError(u'`{0:s}` is not in the table heading'.format(field))
+        elif set(field_list) != set(fields).intersection(self.heading.names):
+            raise DataJointError('Attempt to insert rows with different fields')
 
     def _make_placeholder(self, name, value, ignore_extra_fields):
         """
