@@ -815,7 +815,13 @@ class Table(QueryExpression):
             full_table_name=self.from_clause,
             set_statement=set_statement,
             where_clause=self.where_clause)
-        self.connection.query(command, args=row_to_insert['values'])
+        self.connection.query(
+            command,
+            args=[
+                value
+                for value in row_to_insert['values'] if value is not None
+            ]
+        )
 
 
 def lookup_class_name(name, context, depth=3):
