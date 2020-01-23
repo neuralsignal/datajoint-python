@@ -2,6 +2,7 @@ import collections
 import itertools
 import inspect
 import platform
+import warnings
 import numpy as np
 import pandas
 import logging
@@ -699,6 +700,73 @@ class Table(QueryExpression):
             placeholder=placeholder,
             where_clause=self.where_clause)
         self.connection.query(command, args=(value, ) if value is not None else ())
+
+    def _check_downstream_autopopulated(self, reload=True, error='raise'):
+        """
+            Check if downstream autopopulated tables include entry.
+        """
+
+        if reload or not self.connection.dependencies:
+            self.connection.dependencies.load()
+
+        children = self.children()
+
+        for child_name, child in children.items():
+            if child['aliased']:
+                aliased_children = self.connection.dependencies.children(
+                    child_name
+                )
+                # there should only be one aliased child
+                child_name = list(aliased_children)[0]
+                child = aliased_children[child_name]
+
+            child_table = FreeTable(self.connection, child_name)
+            attr_map = {
+                map_to: map_from
+                for map_to, map_from in child['attr_map'].items()
+                if (
+                    map_from in self.heading.primary_key
+                    and (map_to != map_from)
+                )
+            }
+            restricted_table = (
+                child_table
+                & self.proj(**attr_map)
+            )
+            # recursive
+            restricted_table._check_downstream_autopopulated(False, error)
+
+            is_autopopulated = child_name.split('.')[-1].strip('`').startswith(
+                ('__', '_', '_#', '#_')
+            )
+
+            if is_autopopulated and len(restricted_table) > 0:
+                    message = (
+                        "Save update failure: Entries of downstream "
+                        "autopopulated tables depend on self. "
+                        "Delete appropriate entries in dependent autopopulated"
+                        " tables before editing entries in self."
+                    )
+                    if error == 'ignore':
+                        pass
+                    elif error == 'warn':
+                        warnings.warn(message)
+                    else:
+                        raise DataJointError(message)
+                    return False
+
+        return True
+
+    def save_update(self, attrname, value=None, reload=True, error='raise'):
+        """
+            Updates a field in an existing tuple, but only if no descendant
+            tables are autopopulated tables with that entry.
+        """
+
+        truth = self._check_downstream_autopopulated(reload, error)
+
+        if truth:
+            self._update(attrname, value)
 
 
 def lookup_class_name(name, context, depth=3):
