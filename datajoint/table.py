@@ -776,6 +776,47 @@ class Table(QueryExpression):
         if truth:
             self._update(attrname, value)
 
+    def save_updates(self, updates, reload=True, error='raise'):
+        """
+            Updates multiple fields in an existing tuple, but only if no
+            descendant tables are autopopulated tables with that entry.
+
+            Safety constraints:
+               1. self must be restricted to exactly one tuple
+               2. the update attribute must not be in primary key
+
+        """
+
+        if len(self) != 1:
+            raise DataJointError('Update is only allowed on one tuple at a time')
+        if set(updates) & set(self.primary_key):
+            raise DataJointError('Cannot update a key value.')
+        if set(updates) - set(self.heading):
+            raise DataJointError('Invalid attribute names.')
+
+        truth = self._check_downstream_autopopulated(reload, error)
+
+        if not truth:
+            return
+
+        row_to_insert = self._make_row_to_insert(updates, False, None)
+
+        if not row_to_insert:
+            return
+
+        set_statement = [
+            "`{0}`={1}".format(name, placeholder)
+            for name, placeholder
+            in zip(row_to_insert['names'], row_to_insert['placeholders'])
+        ]
+        set_statement = ', '.join(set_statement)
+
+        command = "UPDATE {full_table_name} SET {set_statement} {where_clause}".format(
+            full_table_name=self.from_clause,
+            set_statement=set_statement,
+            where_clause=self.where_clause)
+        self.connection.query(command, args=row_to_insert['values'])
+
 
 def lookup_class_name(name, context, depth=3):
     """
