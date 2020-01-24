@@ -300,7 +300,7 @@ class Settingstable(UserTable):
             # use importlib to import module
             try:
                 module = importlib.import_module(module)
-                func = getattr(module, func)
+                return getattr(module, func)
             except Exception as e:
                 raise DataJointError(
                     'could not load function: {}'.format(e))
@@ -326,6 +326,8 @@ class Settingstable(UserTable):
                     )
 
                     filename, content = func[0].split(b'\0', 1)
+                    filename = filename.decode()
+                    content = content.decode()
 
                     temporary_path = Path(config['tmp_folder']) / filename
 
@@ -391,12 +393,17 @@ class Settingstable(UserTable):
         # check if module is package
         if hasattr(module, '__package__'):
             # get package module
-            module = getattr(module, '__package__').split('.')[0]
-            git_status['package'] = module
-            # load package module
-            module = importlib.import_module(module)
-            # possibly redundant
-            module = inspect.getmodule(module)
+            module_name = getattr(module, '__package__').split('.')[0]
+            git_status['package'] = module_name
+
+            # __main__ may be skipped
+            try:
+                # load package module
+                module = importlib.import_module(module_name)
+                # possibly redundant
+                module = inspect.getmodule(module_name)
+            except ValueError:
+                pass
 
         # check if module has a version
         if hasattr(module, '__version__'):
@@ -649,10 +656,10 @@ class Settingstable(UserTable):
 
         if restrictions is None:
             pass
-        elif not isinstance(restrictions, (list, dict, np.recarray)):
+        elif not isinstance(restrictions, (list, dict, np.recarray, str)):
             raise DataJointError(
                 'constant restriction for insertion must be '
-                'list, dict, or recarray.'
+                'list, dict, or recarray (or string).'
             )
 
     @staticmethod
