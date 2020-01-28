@@ -1,9 +1,5 @@
 """
-<<<<<<< HEAD
-(De)serialization methods for python datatypes and numpy.ndarrays with provisions for mutual
-=======
 (De)serialization methods for basic datatypes and numpy.ndarrays with provisions for mutual
->>>>>>> a9aad89ce6503aebe177f82c35edd4df80c858b2
 compatibility with Matlab-based serialization implemented by mYm.
 """
 
