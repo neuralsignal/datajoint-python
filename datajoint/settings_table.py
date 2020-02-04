@@ -401,7 +401,7 @@ class Settingstable(UserTable):
                 # load package module
                 module = importlib.import_module(module_name)
                 # possibly redundant
-                module = inspect.getmodule(module_name)
+                module = inspect.getmodule(module)
             except ValueError:
                 pass
 
