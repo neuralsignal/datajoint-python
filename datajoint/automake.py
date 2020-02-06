@@ -88,7 +88,7 @@ class AutoMake(AutoPopulate):
             entry = getattr(
                 table,
                 self._settings['fetch_method']
-            )(format='frame').to_dict('list')
+            )(format='frame').reset_index().to_dict('list')
 
             for column, value in entry.items():
                 if column in self._settings['parse_unique']:
