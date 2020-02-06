@@ -115,7 +115,7 @@ class AutoMake(AutoPopulate):
             warnings.warn('output of function is None for key {}'.format(key))
             output = {}
 
-        #Test if dict or dataframe, convert to dataframe if necessary
+        # Test if dict or dataframe, convert to dataframe if necessary
         if isinstance(output, np.recarray):
             output = pandas.DataFrame(output)
 
@@ -135,11 +135,15 @@ class AutoMake(AutoPopulate):
         # settings name - add to output
         output['settings_name'] = self._settings['settings_name']
 
-        # add columns that are missing in the output
-        for column in (set(self.heading) & set(entry) - set(output)):
-            if entry[column] is None or pandas.isnull(entry[column]):
-                continue
-            output[column] = entry[column]
+        # add columns that are missing in the output (only primary keys)
+        for column in (set(self.primary_key) & set(entry) - set(output)):
+            if (
+                'fetch1' in self._settings['fetch_method']
+                or column in self._settings['parse_unique']
+            ):
+                output[column] = entry[column]
+            else:
+                output[column] = entry[column][0]
 
         # insert into table and part_table
         if self.has_part_tables:
