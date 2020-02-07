@@ -249,18 +249,38 @@ class Table(QueryExpression):
         assert len(master_input[self.primary_key].drop_duplicates()) == 1, \
             'master primary keys are not unique.'
         # convert master input
-        master_input = master_input.iloc[0].dropna().to_dict()
+        master_input = master_input.iloc[0].dropna()
+        primary_input = master_input[self.primary_key].to_dict()
+        master_input = master_input.to_dict()
+        # dictionary of inserted entries (restricted_tables)
+        inserted = []
         # insert into self
         self.insert1(master_input, **kwargs)
+        # add self to inserted entries
+        inserted.append(self & primary_input)
 
         # insert into part tables
         for part_table in self.part_tables:
             part_columns = set(part_table.heading) & set(rows.columns)
             if not part_columns:
                 continue
-            part_input = rows[list(part_columns)]
+            # select correct columns and drop duplicates
+            part_input = rows[list(part_columns)].drop_duplicates(
+                part_table.primary_key
+            )
+            primary_input = part_input[
+                part_table.primary_key
+            ].to_records(False)
             part_input = part_input.to_dict('records')
-            part_table.insert(part_input, **kwargs)
+            # try to insert into part table
+            try:
+                part_table.insert(part_input, **kwargs)
+                inserted.append(part_table & primary_input)
+            except Exception as e:
+                # delete already inserted entries
+                for restricted_table in inserted[::-1]:
+                    restricted_table.delete_quick()
+                raise e
 
     def insert1(self, row, **kwargs):
         """
