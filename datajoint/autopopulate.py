@@ -218,12 +218,12 @@ class AutoPopulate:
         reserve_jobs = kwargs['reserve_jobs']
         jobs = kwargs['jobs']
 
-        if not reserve_jobs or jobs.reserve(self.target.table_name, self._job_key(key)):
+        if not reserve_jobs or jobs.reserve(self.target.full_table_name, self._job_key(key)):
             self.connection.start_transaction()
             if key in self.target: # already populated
                 self.connection.cancel_transaction()
                 if reserve_jobs:
-                    jobs.complete(self.target.table_name, self._job_key(key))
+                    jobs.complete(self.target.full_table_name, self._job_key(key))
             else:
                 logger.info('Populating: ' + str(key))
                 self.__class__._allow_insert = True
@@ -240,7 +240,7 @@ class AutoPopulate:
                     if reserve_jobs:
                         # show error name and error message (if any)
                         jobs.error(
-                            self.target.table_name, self._job_key(key),
+                            self.target.full_table_name, self._job_key(key),
                             error_message=error_message, error_stack=traceback.format_exc())
                     if not suppress_errors or isinstance(error, SystemExit):
                         raise
@@ -250,7 +250,7 @@ class AutoPopulate:
                 else:
                     self.connection.commit_transaction()
                     if reserve_jobs:
-                        jobs.complete(self.target.table_name, self._job_key(key))
+                        jobs.complete(self.target.full_table_name, self._job_key(key))
                 finally:
                     self.__class__._allow_insert = False
 
