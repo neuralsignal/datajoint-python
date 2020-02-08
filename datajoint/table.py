@@ -248,11 +248,11 @@ class Table(QueryExpression):
         # test if self primary is unique
         assert len(master_input[self.primary_key].drop_duplicates()) == 1, \
             'master primary keys are not unique.'
+        # convert master input to dictionary
+        master_input = master_input.iloc[0].dropna()
+        master_input = master_input.to_dict()
 
-        with self.connection.transaction:
-            # convert master input
-            master_input = master_input.iloc[0].dropna()
-            master_input = master_input.to_dict()
+        def helper():
             # insert into self
             self.insert1(master_input, **kwargs)
 
@@ -268,6 +268,13 @@ class Table(QueryExpression):
                 part_input = part_input.to_dict('records')
                 # try to insert into part table
                 part_table.insert(part_input, **kwargs)
+
+        # if in transaction skip context
+        if self.connection.in_transaction:
+            helper()
+        else:
+            with self.connection.transaction:
+                helper()
 
     def insert1(self, row, **kwargs):
         """
