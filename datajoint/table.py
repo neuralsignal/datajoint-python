@@ -435,7 +435,10 @@ class Table(QueryExpression):
         attr = self.heading[name]
 
         if attr.adapter:
-            value = attr.adapter.put(value)
+            try:
+                value = attr.adapter.put(value)
+            except NotImplementedError:
+                raise DataJointError('put not implemented for adapted attribute "{}" with adapted type "{}"'.format(attr.name, attr.type))
         if value is None or (attr.numeric and (value == '' or np.isnan(np.float(value)))):
             # set default value
             placeholder, value = 'DEFAULT', None
