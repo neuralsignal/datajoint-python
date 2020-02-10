@@ -343,6 +343,9 @@ class Settingstable(UserTable):
                     # change working directory for priority import
                     cwd = os.getcwd()
                     os.chdir(config['tmp_folder'])
+                    # add to sys path if necessary
+                    if config['tmp_folder'] not in sys.path:
+                        sys.path.append(config['tmp_folder'])
                     try:
                         func = func_from_tuple(func)
                         os.chdir(cwd)
@@ -684,7 +687,28 @@ class Settingstable(UserTable):
                 'just {required_proj}'
             ).format(left_parse=left_parse, required_proj=required_proj)
 
+    def insert(self, *args, **kwargs):
+        raise NotImplementedError(
+            'For a Settingstable class only'
+            ' insert1 is implemented.')
+
     def insert1(self, row, **kwargs):
+
+        # aliases for primary key
+        primary_key = self.heading.primary_key[0]
+        truth = primary_key in row
+        if not truth and 'settings_name' in row:
+            row[primary_key] = row.pop('settings_name')
+        elif not truth and 'settings' in row:
+            row[primary_key] = row.pop('settings')
+        elif not truth and 'populate_settings' in row:
+            row[primary_key] = row.pop('populate_settings')
+        elif not truth:
+            raise DataJointError(
+                'Need to provide a name for settings; you can use the '
+                'following key aliases in your dictionary for insertion: '
+                '"settings_name", "settings", and "populate_settings".'
+            )
 
         row['func'] = self._get_func_attr(row['func'])
 
@@ -715,12 +739,20 @@ class Settingstable(UserTable):
         if 'farfetch' in row.get('fetch_method', 'fetch1'):
             raise NotImplementedError('farfetch method.')
 
-        return super().insert1(row, **kwargs)
+        return super().insert((row,), **kwargs)
 
     def fetch1(self, *args, check_function=True, **kwargs):
 
         row = super().fetch1(*args, **kwargs)
 
+        return self._postfetch_processing(row, check_function)
+
+    def fetch(self, *args, **kwargs):
+        warnings.warn('fetch in Settingstable class does not process each '
+                      'tuple, use fetch1 instead.')
+        return super().fetch(*args, **kwargs)
+
+    def _postfetch_processing(self, row, check_function=True):
         # convert and check function
         row['func']['func'] = self._get_func(row['func']['func'])
         if check_function:
@@ -743,5 +775,3 @@ class Settingstable(UserTable):
             required_proj,
             row['restrictions']
         )
-
-        return row
