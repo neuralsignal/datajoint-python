@@ -31,19 +31,21 @@ class Settingstable(UserTable):
     _prefix = r'##'
     tier_regexp = r'(?P<settingstable>' + _prefix + _base_regexp + ')'
 
-    definition = """
-    settings_name : varchar(63)
-    ---
-    description = null : varchar(4000) # any string to describe setting
-    func : longblob # two-tuple of strings (module, function) or callable
-    global_settings : longblob # dictionary
-    entry_settings : longblob # dictionary
-    fetch_method = 'fetch1' : enum('fetch', 'fetch1', 'farfetch', 'farfetch1')
-    fetch_tables = null : longblob # dictionary of dict(table_name: projection)
-    restrictions = null : longblob # dictionary or list of restrictions
-    parse_unique = null : longblob # list of unique entries for fetch
-    created = CURRENT_TIMESTAMP : timestamp
-    """
+    @property
+    def definition(self):
+        return """
+        {table_name}_populate_settings : varchar(63)
+        ---
+        description = null : varchar(4000) # any string to describe setting
+        func : longblob # two-tuple of strings (module, function) or callable
+        global_settings : longblob # dictionary
+        entry_settings : longblob # dictionary
+        fetch_method = 'fetch1' : enum('fetch', 'fetch1', 'farfetch', 'farfetch1')
+        fetch_tables = null : longblob # dictionary of dict(table_name: projection)
+        restrictions = null : longblob # dictionary or list of restrictions
+        parse_unique = null : longblob # list of unique entries for fetch
+        created = CURRENT_TIMESTAMP : timestamp
+        """
 
     @ClassProperty
     def child_table(cls):

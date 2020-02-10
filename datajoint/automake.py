@@ -200,6 +200,12 @@ class AutoMake(AutoPopulate):
 
             class Settings(Settingstable):
 
+                @property
+                def definition(self):
+                    return super().definition.format(
+                        table_name=cls.table_name.strip('_#')
+                    )
+
                 @ClassProperty
                 def name(cls):
                     return settings_table_name
