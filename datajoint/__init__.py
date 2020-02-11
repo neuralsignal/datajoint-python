@@ -33,8 +33,10 @@ from .connection import conn, Connection
 from .schema import Schema as schema
 from .schema import create_virtual_module, list_schemas
 from .table import Table, FreeTable
-from .user_tables import Manual, Lookup, Imported, Computed, Part
-from .auto_tables import AutoComputed, AutoImported, Settingstable
+from .user_tables import Manual, Lookup, Imported, Computed
+from .part_table import Part
+from .auto_tables import AutoComputed, AutoImported
+from .settings_table import Settingstable
 from .expression import Not, AndList, U
 from .diagram import Diagram
 from .admin import set_password, kill

@@ -2,6 +2,7 @@ import collections
 import itertools
 import inspect
 import platform
+import warnings
 import numpy as np
 import pandas
 import logging
@@ -247,19 +248,33 @@ class Table(QueryExpression):
         # test if self primary is unique
         assert len(master_input[self.primary_key].drop_duplicates()) == 1, \
             'master primary keys are not unique.'
-        # convert master input
-        master_input = master_input.iloc[0].dropna().to_dict()
-        # insert into self
-        self.insert1(master_input, **kwargs)
+        # convert master input to dictionary
+        master_input = master_input.iloc[0].dropna()
+        master_input = master_input.to_dict()
 
-        # insert into part tables
-        for part_table in self.part_tables:
-            part_columns = set(part_table.heading) & set(rows.columns)
-            if not part_columns:
-                continue
-            part_input = rows[list(part_columns)]
-            part_input = part_input.to_dict('records')
-            part_table.insert(part_input, **kwargs)
+        def helper():
+            # insert into self
+            self.insert1(master_input, **kwargs)
+
+            # insert into part tables
+            for part_table in self.part_tables:
+                part_columns = set(part_table.heading) & set(rows.columns)
+                if not part_columns:
+                    continue
+                # select correct columns and drop duplicates
+                part_input = rows[list(part_columns)].drop_duplicates(
+                    part_table.primary_key
+                )
+                part_input = part_input.to_dict('records')
+                # try to insert into part table
+                part_table.insert(part_input, **kwargs)
+
+        # if in transaction skip context
+        if self.connection.in_transaction:
+            helper()
+        else:
+            with self.connection.transaction:
+                helper()
 
     def insert1(self, row, **kwargs):
         """
@@ -331,87 +346,8 @@ class Table(QueryExpression):
             :return: a dict with fields 'names', 'placeholders', 'values'
             """
 
-            def make_placeholder(name, value):
-                """
-                For a given attribute `name` with `value`, return its processed value or value placeholder
-                as a string to be included in the query and the value, if any, to be submitted for
-                processing by mysql API.
-                :param name:  name of attribute to be inserted
-                :param value: value of attribute to be inserted
-                """
-                if ignore_extra_fields and name not in heading:
-                    return None
-                attr = heading[name]
-
-                if attr.adapter:
-                    value = attr.adapter.put(value)
-                if value is None or (attr.numeric and (value == '' or np.isnan(np.float(value)))):
-                    # set default value
-                    placeholder, value = 'DEFAULT', None
-                else:  # not NULL
-                    placeholder = '%s'
-                    if attr.uuid:
-                        if not isinstance(value, uuid.UUID):
-                            try:
-                                value = uuid.UUID(value)
-                            except (AttributeError, ValueError):
-                                raise DataJointError(
-                                    'badly formed UUID value {v} for attribute `{n}`'.format(v=value, n=name)) from None
-                        value = value.bytes
-                    elif attr.is_blob:
-                        value = blob.pack(value)
-                        value = self.external[attr.store].put(value).bytes if attr.is_external else value
-                    elif attr.is_attachment:
-                        attachment_path = Path(value)
-                        if attr.is_external:
-                            # value is hash of contents
-                            value = self.external[attr.store].upload_attachment(attachment_path).bytes
-                        else:
-                            # value is filename + contents
-                            value = str.encode(attachment_path.name) + b'\0' + attachment_path.read_bytes()
-                    elif attr.is_filepath:
-                        value = self.external[attr.store].upload_filepath(value).bytes
-                    elif attr.numeric:
-                        value = str(int(value) if isinstance(value, bool) else value)
-                return name, placeholder, value
-
-            def check_fields(fields):
-                """
-                Validates that all items in `fields` are valid attributes in the heading
-                :param fields: field names of a tuple
-                """
-                if field_list is None:
-                    if not ignore_extra_fields:
-                        for field in fields:
-                            if field not in heading:
-                                raise KeyError(u'`{0:s}` is not in the table heading'.format(field))
-                elif set(field_list) != set(fields).intersection(heading.names):
-                    raise DataJointError('Attempt to insert rows with different fields')
-
-            if isinstance(row, np.void):  # np.array
-                check_fields(row.dtype.fields)
-                attributes = [make_placeholder(name, row[name])
-                              for name in heading if name in row.dtype.fields]
-            elif isinstance(row, collections.abc.Mapping):  # dict-based
-                check_fields(row)
-                attributes = [make_placeholder(name, row[name]) for name in heading if name in row]
-            else:  # positional
-                try:
-                    if len(row) != len(heading):
-                        raise DataJointError(
-                            'Invalid insert argument. Incorrect number of attributes: '
-                            '{given} given; {expected} expected'.format(
-                                given=len(row), expected=len(heading)))
-                except TypeError:
-                    raise DataJointError('Datatype %s cannot be inserted' % type(row))
-                else:
-                    attributes = [make_placeholder(name, value) for name, value in zip(heading, row)]
-            if ignore_extra_fields:
-                attributes = [a for a in attributes if a is not None]
-
-            assert len(attributes), 'Empty tuple'
-            row_to_insert = dict(zip(('names', 'placeholders', 'values'), zip(*attributes)))
             nonlocal field_list
+            row_to_insert = self._make_row_to_insert(row, ignore_extra_fields, field_list)
             if field_list is None:
                 # first row sets the composition of the field list
                 field_list = row_to_insert['names']
@@ -441,6 +377,98 @@ class Table(QueryExpression):
             except DuplicateError as err:
                 raise err.suggest('To ignore duplicate entries in insert, set skip_duplicates=True') from None
 
+    def _make_row_to_insert(self, row, ignore_extra_fields, field_list):
+        """
+        :param row:  A tuple to insert
+        :return: a dict with fields 'names', 'placeholders', 'values'
+        """
+
+        if isinstance(row, np.void):  # np.array
+            self._check_fields(row.dtype.fields, field_list, ignore_extra_fields)
+            attributes = [self._make_placeholder(name, row[name], ignore_extra_fields)
+                          for name in self.heading if name in row.dtype.fields]
+        elif isinstance(row, collections.abc.Mapping):  # dict-based
+            self._check_fields(row, field_list, ignore_extra_fields)
+            attributes = [self._make_placeholder(name, row[name], ignore_extra_fields)
+                          for name in self.heading if name in row]
+        else:  # positional
+            try:
+                if len(row) != len(self.heading):
+                    raise DataJointError(
+                        'Invalid insert argument. Incorrect number of attributes: '
+                        '{given} given; {expected} expected'.format(
+                            given=len(row), expected=len(self.heading)))
+            except TypeError:
+                raise DataJointError('Datatype %s cannot be inserted' % type(row))
+            else:
+                attributes = [self._make_placeholder(name, value, ignore_extra_fields)
+                              for name, value in zip(self.heading, row)]
+        if ignore_extra_fields:
+            attributes = [a for a in attributes if a is not None]
+
+        assert len(attributes), 'Empty tuple'
+        return dict(zip(('names', 'placeholders', 'values'), zip(*attributes)))
+
+    def _check_fields(self, fields, field_list, ignore_extra_fields):
+        """
+        Validates that all items in `fields` are valid attributes in the heading
+        :param fields: field names of a tuple
+        """
+        if field_list is None:
+            if not ignore_extra_fields:
+                for field in fields:
+                    if field not in self.heading:
+                        raise KeyError(u'`{0:s}` is not in the table heading'.format(field))
+        elif set(field_list) != set(fields).intersection(self.heading.names):
+            raise DataJointError('Attempt to insert rows with different fields')
+
+    def _make_placeholder(self, name, value, ignore_extra_fields):
+        """
+        For a given attribute `name` with `value`, return its processed value or value placeholder
+        as a string to be included in the query and the value, if any, to be submitted for
+        processing by mysql API.
+        :param name:  name of attribute to be inserted
+        :param value: value of attribute to be inserted
+        """
+        if ignore_extra_fields and name not in self.heading:
+            return None
+        attr = self.heading[name]
+
+        if attr.adapter:
+            try:
+                value = attr.adapter.put(value)
+            except NotImplementedError:
+                raise DataJointError('put not implemented for adapted attribute "{}" with adapted type "{}"'.format(attr.name, attr.type))
+        if value is None or (attr.numeric and (value == '' or np.isnan(np.float(value)))):
+            # set default value
+            placeholder, value = 'DEFAULT', None
+        else:  # not NULL
+            placeholder = '%s'
+            if attr.uuid:
+                if not isinstance(value, uuid.UUID):
+                    try:
+                        value = uuid.UUID(value)
+                    except (AttributeError, ValueError):
+                        raise DataJointError(
+                            'badly formed UUID value {v} for attribute `{n}`'.format(v=value, n=name)) from None
+                value = value.bytes
+            elif attr.is_blob:
+                value = blob.pack(value)
+                value = self.external[attr.store].put(value).bytes if attr.is_external else value
+            elif attr.is_attachment:
+                attachment_path = Path(value)
+                if attr.is_external:
+                    # value is hash of contents
+                    value = self.external[attr.store].upload_attachment(attachment_path).bytes
+                else:
+                    # value is filename + contents
+                    value = str.encode(attachment_path.name) + b'\0' + attachment_path.read_bytes()
+            elif attr.is_filepath:
+                value = self.external[attr.store].upload_filepath(value).bytes
+            elif attr.numeric:
+                value = str(int(value) if isinstance(value, bool) else value)
+        return name, placeholder, value
+
     def delete_quick(self, get_count=False):
         """
         Deletes the table without cascading and without user prompt.
@@ -452,11 +480,14 @@ class Table(QueryExpression):
         self._log(query[:255])
         return count
 
-    def delete(self, verbose=True, force=False):
+    def _delete(self, verbose=True, force=False):
+        """delete helper function. Called in delete.
         """
-        Deletes the contents of the table and its dependent tables, recursively.
-        User is prompted for confirmation if config['safemode'] is set to True.
-        """
+        # message and commit transaction are returned as well as connection
+        message = ''
+        commit_transaction = False
+
+        # copied from old delete method
         conn = self.connection
         already_in_transaction = conn.in_transaction
         safe = config['safemode']
@@ -499,7 +530,7 @@ class Table(QueryExpression):
                         if isinstance(r, _RenameMap) else r)
                     for r in restrictions[name]])
         if safe:
-            print('About to delete:')
+            message += 'About to delete'
 
         if not already_in_transaction:
             conn.start_transaction()
@@ -510,7 +541,7 @@ class Table(QueryExpression):
                     count = table.delete_quick(get_count=True)
                     total += count
                     if (verbose or safe) and count:
-                        print('{table}: {count} items'.format(table=name, count=count))
+                        message += '\n{table}: {count} items'.format(table=name, count=count)
         except:
             # Delete failed, perhaps due to insufficient privileges. Cancel transaction.
             if not already_in_transaction:
@@ -519,22 +550,36 @@ class Table(QueryExpression):
         else:
             assert not (already_in_transaction and safe)
             if not total:
-                print('Nothing to delete')
+                message = ('Nothing to delete')
                 if not already_in_transaction:
                     conn.cancel_transaction()
             else:
                 if already_in_transaction:
                     if verbose:
-                        print('The delete is pending within the ongoing transaction.')
+                        message = ('\nThe delete is pending within the ongoing transaction.')
                 else:
-                    if not safe or force or user_choice("Proceed?", default='no') == 'yes':
-                        conn.commit_transaction()
-                        if verbose or safe:
-                            print('Committed.')
-                    else:
-                        conn.cancel_transaction()
-                        if verbose or safe:
-                            print('Cancelled deletes.')
+                    commit_transaction = not safe or force
+
+        return message, commit_transaction, conn
+
+    def delete(self, verbose=True, force=False):
+        """
+        Deletes the contents of the table and its dependent tables, recursively.
+        User is prompted for confirmation if config['safemode'] is set to True.
+        """
+        safe = config['safemode']
+        message, commit_transaction, conn = self._delete(verbose, force)
+
+        print(message)
+
+        if commit_transaction or user_choice("Proceed?", default='no') == 'yes':
+            conn.commit_transaction()
+            if verbose or safe:
+                print('Commited.')
+        else:
+            conn.cancel_transaction()
+            if verbose or safe:
+                message = ('\nCancelled deletes.')
 
     def drop_quick(self):
         """
@@ -672,26 +717,128 @@ class Table(QueryExpression):
         if attrname in self.heading.primary_key:
             raise DataJointError('Cannot update a key value.')
 
-        attr = self.heading[attrname]
+        attrname, placeholder, value = self._make_placeholder(attrname, value, False)
 
-        if attr.is_blob:
-            value = blob.pack(value)
-            placeholder = '%s'
-        elif attr.numeric:
-            if value is None or np.isnan(np.float(value)):  # nans are turned into NULLs
-                placeholder = 'NULL'
-                value = None
-            else:
-                placeholder = '%s'
-                value = str(int(value) if isinstance(value, bool) else value)
-        else:
-            placeholder = '%s'
         command = "UPDATE {full_table_name} SET `{attrname}`={placeholder} {where_clause}".format(
             full_table_name=self.from_clause,
             attrname=attrname,
             placeholder=placeholder,
             where_clause=self.where_clause)
         self.connection.query(command, args=(value, ) if value is not None else ())
+
+    def _check_downstream_autopopulated(self, reload=True, error='raise'):
+        """
+            Check if downstream autopopulated tables include entry.
+        """
+
+        if reload or not self.connection.dependencies:
+            self.connection.dependencies.load()
+
+        children = self.children()
+
+        for child_name, child in children.items():
+            if child['aliased']:
+                aliased_children = self.connection.dependencies.children(
+                    child_name
+                )
+                # there should only be one aliased child
+                child_name = list(aliased_children)[0]
+                child = aliased_children[child_name]
+
+            child_table = FreeTable(self.connection, child_name)
+            attr_map = {
+                map_to: map_from
+                for map_to, map_from in child['attr_map'].items()
+                if (
+                    map_from in self.heading.primary_key
+                    and (map_to != map_from)
+                )
+            }
+            restricted_table = (
+                child_table
+                & self.proj(**attr_map)
+            )
+            # recursive
+            restricted_table._check_downstream_autopopulated(False, error)
+
+            is_autopopulated = child_name.split('.')[-1].strip('`').startswith(
+                ('__', '_', '_#', '#_')
+            )
+
+            if is_autopopulated and len(restricted_table) > 0:
+                    message = (
+                        "Save update failure: Entries of downstream "
+                        "autopopulated tables depend on self. "
+                        "Delete appropriate entries in dependent autopopulated"
+                        " tables before editing entries in self."
+                    )
+                    if error == 'ignore':
+                        pass
+                    elif error == 'warn':
+                        warnings.warn(message)
+                    else:
+                        raise DataJointError(message)
+                    return False
+
+        return True
+
+    def save_update(self, attrname, value=None, reload=True, error='raise'):
+        """
+            Updates a field in an existing tuple, but only if no descendant
+            tables are autopopulated tables with that entry.
+        """
+
+        truth = self._check_downstream_autopopulated(reload, error)
+
+        if truth:
+            self._update(attrname, value)
+
+    def save_updates(self, updates, reload=True, error='raise'):
+        """
+            Updates multiple fields in an existing tuple, but only if no
+            descendant tables are autopopulated tables with that entry.
+
+            Safety constraints:
+               1. self must be restricted to exactly one tuple
+               2. the update attribute must not be in primary key
+
+        """
+
+        if len(self) != 1:
+            raise DataJointError('Update is only allowed on one tuple at a time')
+        if set(updates) & set(self.primary_key):
+            raise DataJointError('Cannot update a key value.')
+        if set(updates) - set(self.heading):
+            raise DataJointError('Invalid attribute names.')
+
+        truth = self._check_downstream_autopopulated(reload, error)
+
+        if not truth:
+            return
+
+        row_to_insert = self._make_row_to_insert(updates, False, None)
+
+        if not row_to_insert:
+            return
+
+        set_statement = [
+            "`{0}`={1}".format(name, placeholder)
+            for name, placeholder
+            in zip(row_to_insert['names'], row_to_insert['placeholders'])
+        ]
+        set_statement = ', '.join(set_statement)
+
+        command = "UPDATE {full_table_name} SET {set_statement} {where_clause}".format(
+            full_table_name=self.from_clause,
+            set_statement=set_statement,
+            where_clause=self.where_clause)
+        self.connection.query(
+            command,
+            args=[
+                value
+                for value in row_to_insert['values'] if value is not None
+            ]
+        )
 
 
 def lookup_class_name(name, context, depth=3):

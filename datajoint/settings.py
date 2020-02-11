@@ -51,7 +51,8 @@ default = OrderedDict({
     'database.use_tls': None,
     'enable_python_native_blobs': False,  # python-native/dj0 encoding support
     'enable_python_pickle_blobs': False,
-    'enable_automakers': False
+    'enable_automakers': False,
+    'tmp_folder': None
 })
 
 logger = logging.getLogger(__name__)
