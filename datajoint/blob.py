@@ -15,6 +15,12 @@ from .errors import DataJointError
 from .utils import OrderedDict
 from .settings import config
 
+try:
+    import cloudpickle
+    pickle.dumps = cloudpickle.dumps
+except ImportError:
+    pass
+
 
 mxClassID = OrderedDict((
     # see http://www.mathworks.com/help/techdoc/apiref/mxclassid.html
