@@ -8,7 +8,9 @@ import warnings
 import sys
 import os
 from pathlib import Path
+import json
 import numpy as np
+import pandas
 
 from .table import FreeTable
 from .user_tables import UserTable, _base_regexp
@@ -22,6 +24,10 @@ if sys.version_info[1] < 6:
     dict = collections.OrderedDict
 
 Sequence = (collections.MutableSequence, tuple, set)
+# which keys to keep in conda list return
+CONDA_KEEP = ['name', 'version']
+# major python version
+PYTHON_VERSION = (sys.version_info[0], sys.version_info[1])
 
 
 class Settingstable(UserTable):
@@ -386,146 +392,81 @@ class Settingstable(UserTable):
             )
 
     @staticmethod
-    def _get_git_status(func):
-        """get git status for function if it exists
+    def _get_func_status(func):
+        """
+        get version and package for function
+        get git status for function if it exists
+        get conda environment list
         """
 
-        # attribute file check for module happend previously
-        module = inspect.getmodule(func)
-        # init git status dictionary
-        git_status = {}
+        # init func status dictionary
+        func_status = {}
+        func_status['python_version'] = PYTHON_VERSION
 
-        # check if module is package
-        if hasattr(module, '__package__'):
-            # get package module
-            module_name = getattr(module, '__package__').split('.')[0]
-            git_status['package'] = module_name
+        module = _get_package_status(func_status, func)
 
-            # __main__ may be skipped
-            try:
-                # load package module
-                module = importlib.import_module(module_name)
-                # possibly redundant
-                module = inspect.getmodule(module)
-            except ValueError:
-                pass
+        _get_conda_status(func_status)
 
-        # check if module has a version
-        if hasattr(module, '__version__'):
-            git_status['version'] = getattr(module, '__version__')
+        _get_git_status(func_status, module, func)
 
-        # try importing git module for git checking
-        try:
-            import git
-        except (ImportError, ModuleNotFoundError):
-            warnings.warn(
-                'Did not perform getting git status: '
-                'Git Python API not installed')
-            return git_status
+        return func_status
 
-        # get directory name of module
-        dir_name = os.path.dirname(inspect.getabsfile(module))
-        module_path = dir_name
-
-        while True:
-            # set git path
-            git_path = os.path.join(dir_name, '.git')
-            # set git repo if path exists
-            if os.path.exists(git_path):
-                repo = git.Repo(git_path)
-                sha1, branch = repo.head.commit.name_rev.split()
-                # check if files were modified
-                modified = (repo.git.status().find('modified') > 0)
-                if modified:
-                    warnings.warn(
-                        'You have uncommited changes. '
-                        'Consider committing before running populate.'
-                    )
-
-                git_status.update({
-                    'sha1': sha1,
-                    'branch': branch,
-                    'modified': modified,
-                })
-
-                break
-
-            parts = os.path.split(dir_name)
-
-            if dir_name in parts:
-                # only throw a warning if not package and versioning exists
-                if 'package' not in git_status and 'version' not in git_status:
-                    warnings.warn((
-                        'No git directory was found for module in {path} for '
-                        'function {func}. '
-                        'Implementation of git version control recommended.'
-                    ).format(path=module_path, func=func))
-
-                break
-
-            dir_name = parts[0]
-
-        return git_status
-
-    def _check_git_status(self, func_dict):
-        """check git status between inserted and current version
+    def _check_func_status(self, func_dict):
+        """
+        check version and package for function
+        check git status between inserted and current version
+        check anaconda environment list
         """
 
         func = func_dict['func']
-        git_status = self._get_git_status(func)
+        func_status = self._get_func_status(func)
 
-        old_sha1 = git_status.get('sha1', None)
-        old_branch = git_status.get('branch', None)
-        old_modified = git_status.get('modified', None)
-        old_version = git_status.get('version', None)
-        old_package = git_status.get('package', None)
+        new_sha1 = func_status.get('sha1', None)
+        new_branch = func_status.get('branch', None)
+        new_modified = func_status.get('modified', None)
+        new_version = func_status.get('version', None)
+        new_package = func_status.get('package', None)
+        new_conda_list = func_status.get('conda_list', None)
+        new_python_version = func_status.get('python_version', None)
 
-        new_sha1 = func_dict.get('sha1', None)
-        new_branch = func_dict.get('branch', None)
-        new_modified = func_dict.get('modified', None)
-        new_version = func_dict.get('version', None)
-        new_package = func_dict.get('package', None)
+        old_sha1 = func_dict.get('sha1', None)
+        old_branch = func_dict.get('branch', None)
+        old_modified = func_dict.get('modified', None)
+        old_version = func_dict.get('version', None)
+        old_package = func_dict.get('package', None)
+        old_conda_list = func_dict.get('conda_list', None)
+        old_python_version = func_dict.get('python_version', None)
 
-        # check package and package version
-        if (new_package is None) or (old_package is None):
+        # check python version
+        if (new_python_version is None) or (old_python_version is None):
             warnings.warn((
-                'no package checking for function "{func}" available.'
+                'No python version checking for function "{func}" available.'
             ).format(func=func))
-        elif new_package != old_package:
+        elif new_python_version != old_python_version:
             warnings.warn((
-                'old package "{old_package}" does not '
-                'match with new package "{new_package}".'
-            ).format(old_package=old_package, new_package=new_package))
-        elif (new_version is None) or (old_version is None):
-            warnings.warn((
-                'no version checking for package "{package}" available.'
-            ).format(package=old_package))
-        elif new_version != old_version:
-            warnings.warn((
-                'old version "{old_version}" for package "{package}" '
-                'does not match new version "{new_version}"'
+                'Old python version "{old_python_version}" '
+                'does not match current python version "{new_python_version}"'
             ).format(
-                package=old_package,
-                old_version=old_version,
-                new_version=new_version
+                new_python_version=new_python_version,
+                old_python_version=old_python_version
             ))
 
-        # check git commit
-        if (new_sha1 is None) or (old_sha1 is None):
-            return
-        if old_branch != new_branch:
-            warnings.warn((
-                'Working in new branch {new_branch}. '
-                'Old branch was {old_branch}'
-            ).format(new_branch=new_branch, old_branch=old_branch))
-        if new_sha1 != old_sha1:
-            warnings.warn(
-                'Git commits have occured since insertion.'
-            )
-        elif new_modified and not old_modified:
-            warnings.warn(
-                'Files have been modified since insertion.'
-            )
+        _check_package_status(
+            func,
+            new_package, old_package,
+            new_version, old_version
+        )
+
+        _check_conda_status(
+            func,
+            new_conda_list, old_conda_list
+        )
+
+        _check_git_status(
+            new_sha1, old_sha1,
+            old_branch, new_branch,
+            new_modified, old_modified
+        )
 
     @staticmethod
     def _get_func_params(func):
@@ -649,7 +590,7 @@ class Settingstable(UserTable):
 
         func = self._get_func(attr['func'])
         self._check_func(func)
-        attr.update(self._get_git_status(func))
+        attr.update(self._get_func_status(func))
         attr.update(self._get_func_params(func))
 
         return attr
@@ -757,7 +698,7 @@ class Settingstable(UserTable):
         row['func']['func'] = self._get_func(row['func']['func'])
         if check_function:
             self._check_func(row['func']['func'])
-            self._check_git_status(row['func'])
+            self._check_func_status(row['func'])
             self._check_func_params(
                 row['func'],
                 used=self._used_params(
@@ -774,4 +715,237 @@ class Settingstable(UserTable):
             row['fetch_tables'],
             required_proj,
             row['restrictions']
+        )
+
+        return row
+
+
+# -- misc helper functions -- #
+
+def _get_package_status(func_status, func):
+    """
+    get package status (used by Settingstable._get_func_status)
+    returns module
+    """
+
+    # attribute file check for module happend previously
+    module = inspect.getmodule(func)
+
+    # check if module is package
+    if hasattr(module, '__package__'):
+        # get package module
+        module_name = getattr(module, '__package__').split('.')[0]
+        func_status['package'] = module_name
+
+        # __main__ may be skipped
+        try:
+            # load package module
+            module = importlib.import_module(module_name)
+            # possibly redundant
+            module = inspect.getmodule(module)
+        except ValueError:
+            pass
+
+    # check if module has a version
+    if hasattr(module, '__version__'):
+        func_status['version'] = getattr(module, '__version__')
+
+    return module
+
+
+def _check_package_status(
+    func,
+    new_package, old_package,
+    new_version, old_version
+):
+    # check package and package version
+    if (new_package is None) or (old_package is None):
+        warnings.warn((
+            'No package checking for function "{func}" available.'
+        ).format(func=func))
+    elif new_package != old_package:
+        warnings.warn((
+            'Old package "{old_package}" does not '
+            'match with new package "{new_package}".'
+        ).format(old_package=old_package, new_package=new_package))
+    elif (new_version is None) or (old_version is None):
+        warnings.warn((
+            'No version checking for package "{package}" available.'
+        ).format(package=old_package))
+    elif new_version != old_version:
+        warnings.warn((
+            'Old version "{old_version}" for package "{package}" '
+            'does not match new version "{new_version}"'
+        ).format(
+            package=old_package,
+            old_version=old_version,
+            new_version=new_version
+        ))
+
+
+def _get_conda_status(func_status):
+    """
+    get conda status (used by Settingstable._get_func_status)
+    """
+
+    # try importing conda
+    try:
+        import conda.cli.python_api as conda_api
+    except ImportError:
+        warnings.warn(
+            'Did not perform getting conda status: '
+            'Conda Python API not installed.'
+        )
+        return
+
+    try:
+        stdout, stderr, return_code = conda_api.run_command(
+            conda_api.Commands.LIST, '--json', use_exception_handler=True
+        )
+    except Exception:
+        warnings.warn(
+            'Could not perform "conda list --json". '
+            'Not conda status test performed'
+        )
+        return
+
+    if return_code:
+        warnings.warn(
+            f'Could not get conda environment list; Error message:\n{stderr}'
+        )
+        return
+
+    conda_list = pandas.DataFrame(json.loads(stdout))[CONDA_KEEP]
+
+    func_status['conda_list'] = conda_list.to_dict('list')
+
+
+def _check_conda_status(
+    func,
+    new_conda_list, old_conda_list
+):
+    # check conda list
+    if (new_conda_list is None) or (old_conda_list is None):
+        warnings.warn((
+            'No conda checking for function "{func}" available.'
+        ).format(func=func))
+    elif new_conda_list != old_conda_list:
+        new_conda_list = pandas.DataFrame(new_conda_list)
+        old_conda_list = pandas.DataFrame(old_conda_list)
+        # only use keys from old conda list
+        # i.e. it doesn't care if new packages were installed
+        merged_conda_list = pandas.merge(
+            new_conda_list, old_conda_list,
+            on='name',
+            how='right',
+            suffix=('_new', '_old')
+        )
+        # packages missing in new version
+        missing_packages = merged_conda_list['version_new'].isnull()
+        if missing_packages.any():
+            warnings.warn((
+                'These packages, which were present when inserting '
+                'this function, are missing in your current anaconda '
+                'environment:\n{missing}'
+            ).format(
+                missing=merged_conda_list.loc[
+                    missing_packages, 'name'
+                ].tolist()
+            ))
+        # packages with different versions
+        different_version = (
+            merged_conda_list['version_old']
+            != merged_conda_list['version_new']
+        )
+        if different_version.any():
+            merged_conda_list = merged_conda_list[different_version]
+            warnings.warn((
+                'These packages have different versions from the time '
+                'this function was inserted into the Settingstable:'
+                '\n{different}'
+            ).format(
+                different=merged_conda_list
+            ))
+
+
+def _get_git_status(func_status, module, func):
+    """
+    get git status (used by Settingstable._get_func_status)
+    """
+
+    # try importing git module for git checking
+    try:
+        import git
+    except ImportError:
+        warnings.warn(
+            'Did not perform getting git status: '
+            'Git Python API not installed.')
+        return
+
+    # get directory name of module
+    dir_name = os.path.dirname(inspect.getabsfile(module))
+    module_path = dir_name
+
+    while True:
+        # set git path
+        git_path = os.path.join(dir_name, '.git')
+        # set git repo if path exists
+        if os.path.exists(git_path):
+            repo = git.Repo(git_path)
+            sha1, branch = repo.head.commit.name_rev.split()
+            # check if files were modified
+            modified = (repo.git.status().find('modified') > 0)
+            if modified:
+                warnings.warn(
+                    'You have uncommited changes. '
+                    'Consider committing before running populate.'
+                )
+
+            func_status.update({
+                'sha1': sha1,
+                'branch': branch,
+                'modified': modified,
+            })
+
+            break
+
+        parts = os.path.split(dir_name)
+
+        if dir_name in parts:
+            # only throw a warning if not package and versioning exists
+            if (
+                'package' not in func_status
+                and 'version' not in func_status
+            ):
+                warnings.warn((
+                    'No git directory was found for module in {path} for '
+                    'function {func}. '
+                    'Implementation of git version control recommended.'
+                ).format(path=module_path, func=func))
+
+            break
+
+        dir_name = parts[0]
+
+
+def _check_git_status(
+    new_sha1, old_sha1,
+    old_branch, new_branch,
+    new_modified, old_modified
+):
+    # check git commit
+    if (new_sha1 is None) or (old_sha1 is None):
+        return
+    if old_branch != new_branch:
+        warnings.warn((
+            'Working in new branch {new_branch}. '
+            'Old branch was {old_branch}'
+        ).format(new_branch=new_branch, old_branch=old_branch))
+    if new_sha1 != old_sha1:
+        warnings.warn(
+            'Git commits have occured since insertion.'
+        )
+    elif new_modified and not old_modified:
+        warnings.warn(
+            'Files have been modified since insertion.'
         )

@@ -766,19 +766,19 @@ class Table(QueryExpression):
             )
 
             if is_autopopulated and len(restricted_table) > 0:
-                    message = (
-                        "Save update failure: Entries of downstream "
-                        "autopopulated tables depend on self. "
-                        "Delete appropriate entries in dependent autopopulated"
-                        " tables before editing entries in self."
-                    )
-                    if error == 'ignore':
-                        pass
-                    elif error == 'warn':
-                        warnings.warn(message)
-                    else:
-                        raise DataJointError(message)
-                    return False
+                message = (
+                    "Save update failure: Entries of downstream "
+                    "autopopulated tables depend on self. "
+                    "Delete appropriate entries in dependent autopopulated"
+                    " tables before editing entries in self."
+                )
+                if error == 'ignore':
+                    pass
+                elif error == 'warn':
+                    warnings.warn(message)
+                else:
+                    raise DataJointError(message)
+                return False
 
         return True
 
