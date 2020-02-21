@@ -694,18 +694,26 @@ class Settingstable(UserTable):
 
         return super().insert((row,), **kwargs)
 
-    def fetch1(self, *args, check_function=True, **kwargs):
+    def fetch1(
+        self, *args,
+        check_function=True, get_joined_table=True,
+        **kwargs
+    ):
 
         row = super().fetch1(*args, **kwargs)
 
-        return self._postfetch_processing(row, check_function)
+        return self._postfetch_processing(
+            row, check_function, get_joined_table
+        )
 
     def fetch(self, *args, **kwargs):
         warnings.warn('fetch in Settingstable class does not process each '
                       'tuple, use fetch1 instead.')
         return super().fetch(*args, **kwargs)
 
-    def _postfetch_processing(self, row, check_function=True):
+    def _postfetch_processing(
+        self, row, check_function=True, get_joined_table=True
+    ):
         # convert and check function
         row['func']['func'] = self._get_func(row['func']['func'])
         if check_function:
@@ -721,13 +729,14 @@ class Settingstable(UserTable):
         row['kwargs'] = row['func'].get('kwargs', None)
         row['func'] = row['func']['func']
 
-        required_proj = self._required_proj(row['entry_settings'])
-        # get joined tables / primary parent tables
-        row['fetch_tables'] = self._get_joined_table(
-            row['fetch_tables'],
-            required_proj,
-            row['restrictions']
-        )
+        if get_joined_table:
+            required_proj = self._required_proj(row['entry_settings'])
+            # get joined tables / primary parent tables
+            row['fetch_tables'] = self._get_joined_table(
+                row['fetch_tables'],
+                required_proj,
+                row['restrictions']
+            )
 
         return row
 
