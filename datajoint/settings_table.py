@@ -153,6 +153,8 @@ class Settingstable(UserTable):
             # load graph
             self.connection.dependencies.load()
             nodes = self.connection.dependencies.nodes
+            # load descendents
+            descendants = self.child_table().descendants()
 
             # initialize new dictionary
             insert_fetch_tables = {}
@@ -198,6 +200,16 @@ class Settingstable(UserTable):
                         ).format(table_name=table_name, schema=schema))
 
                 free_table = FreeTable(self.connection, table)
+                if free_table.full_table_name in descendants:
+                    raise DataJointError((
+                        'Cannot have descendant tables in joined table. '
+                        'Table {table_name} is a descendant table of '
+                        '{child_table_name}.'
+                    ).format(
+                        table_name=free_table.full_table_name,
+                        child_table_name=self.child_table.full_table_name
+                    ))
+
                 if isinstance(proj, tuple):
                     assert len(proj) == 2, 'projection must be two-tuple.'
 
