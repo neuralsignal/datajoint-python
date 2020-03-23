@@ -57,6 +57,10 @@ class Settingstable(UserTable):
     def child_table(cls):
         raise NotADirectoryError('child table attribute for settings table.')
 
+    @property
+    def settings_name(self):
+        return self.heading.primary_key[0]
+
     @staticmethod
     def _check_settings(settings, params, args, kwargs):
         """check if global/entry settings key in function
@@ -648,7 +652,7 @@ class Settingstable(UserTable):
     def insert1(self, row, **kwargs):
 
         # aliases for primary key
-        primary_key = self.heading.primary_key[0]
+        primary_key = self.settings_name
         truth = primary_key in row
         if not truth and 'settings_name' in row:
             row[primary_key] = row.pop('settings_name')

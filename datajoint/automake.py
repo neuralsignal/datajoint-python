@@ -51,7 +51,7 @@ class AutoMake(AutoPopulate):
         :param max_calls: if not None, populates at max that many keys
         """
 
-        setting_restrict = {'settings_name': settings_name}
+        setting_restrict = {self.settings_name: settings_name}
 
         settings = (self.settings_table & setting_restrict).fetch1()
         settings['fetch_tables'] = (
@@ -133,7 +133,7 @@ class AutoMake(AutoPopulate):
             )
 
         # settings name - add to output
-        output['settings_name'] = self._settings['settings_name']
+        output[self.settings_name] = self._settings[self.settings_name]
 
         # add columns that are missing in the output (only primary keys)
         for column in (set(self.primary_key) & set(entry) - set(output)):
@@ -186,6 +186,10 @@ class AutoMake(AutoPopulate):
             kwargs.update(kw)
         #
         return args, kwargs
+
+    @property
+    def settings_name(self):
+        return self.settings_table().settings_name
 
     @ClassProperty
     def settings_table(cls):
