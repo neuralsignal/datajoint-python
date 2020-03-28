@@ -349,6 +349,20 @@ def _make_attribute_alter(new, old, primary_key):
     return sql
 
 
+def _make_foreign_key_alter(new, old):
+    """
+    :param new: new foreign key declarations
+    :param old: old foreign key declarations
+    :return: list of SQL ALTER commands
+    """
+
+    sql = list()
+    for foreign_sql in set(new) - set(old):
+        sql.append("ADD {foreign_sql}".format(foreign_sql=foreign_sql))
+
+    return sql
+
+
 def alter(definition, old_definition, context):
     """
     :param definition: new table definition
@@ -365,7 +379,7 @@ def alter(definition, old_definition, context):
     sql = list()
     if primary_key != primary_key_:
         raise NotImplementedError('table.alter cannot alter the primary key (yet).')
-    if foreign_key_sql != foreign_key_sql_:
+    if set(foreign_key_sql_) - set(foreign_key_sql):
         raise NotImplementedError('table.alter cannot alter foreign keys (yet).')
     if index_sql != index_sql_:
         raise NotImplementedError('table.alter cannot alter indexes (yet)')
@@ -373,6 +387,8 @@ def alter(definition, old_definition, context):
         sql.extend(_make_attribute_alter(attribute_sql, attribute_sql_, primary_key))
     if table_comment != table_comment_:
         sql.append('COMMENT="%s"' % table_comment)
+    if set(foreign_key_sql) - set(foreign_key_sql_):
+        sql.extend(_make_foreign_key_alter(foreign_key_sql, foreign_key_sql_))
     return sql, [e for e in external_stores if e not in external_stores_]
 
 
