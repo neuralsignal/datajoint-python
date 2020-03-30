@@ -222,35 +222,53 @@ class Table(QueryExpression):
     def external(self):
         return self.connection.schemas[self.database].external
 
-    def insert1p(self, rows, **kwargs):
+    def insert1p(self, row, raise_part_missing=True, **kwargs):
         """
         Insert data records or Mapping for one entry and its part tables.
-        It does not check if extra fields are defined.
-        Only tests if master primary keys are unique.
+        Row must contain keys corresponding to the part table names.
+        The values for the part table keys must of type dict, list of dicts,
+        numpy.recarray, or pandas.DataFrame. If the value is None the part
+        table will be skipped. They do not have to contain the primary keys
+        of the master table.
+        Does not work, if part tables have renamed primary keys.
 
-        :param rows: a pandas DataFrame, numpy.recarray, or dict
+        :param row: a pandas Series or dict-like object
         """
 
-        if isinstance(rows, np.recarray):
-            rows = pandas.DataFrame(rows)
-        elif isinstance(rows, dict):
-            rows = pandas.DataFrame([rows])
-        elif not isinstance(rows, pandas.DataFrame):
-            raise DataJointError(
-                'rows must be of type pandas dataframe, numpy recarray, '
-                'or dict for insert1p, but is of type {}'.format(type(rows)))
+        if isinstance(row, pandas.DataFrame):
+            # assumes all data in one dataframe
+            columns = set(self.heading) & set(row)
+            assert not (set(self.primary_key) - columns), \
+                'not all master primary key in dataframe for insert1p.'
+            # select self columns
+            new_row = row[list(columns)]
+            # test if self primary is unique
+            assert (
+                len(new_row[self.primary_key].drop_duplicates()) == 1
+            ), ('master primary keys are not unique.')
+            # convert master input to dictionary
+            new_row = new_row.iloc[0].dropna().to_dict()
 
-        columns = set(self.heading) & set(rows.columns)
-        assert not (set(self.primary_key) - columns), \
-            'not all master primary key in dataframe for insert1p.'
-        # select self columns
-        master_input = rows[list(columns)]
-        # test if self primary is unique
-        assert len(master_input[self.primary_key].drop_duplicates()) == 1, \
-            'master primary keys are not unique.'
-        # convert master input to dictionary
-        master_input = master_input.iloc[0].dropna()
-        master_input = master_input.to_dict()
+            for part_table in self.part_tables:
+                part_columns = set(part_table.heading) & set(row)
+                if not part_columns:
+                    new_row[part_table.name] = None
+                else:
+                    # select correct columns and drop duplicates
+                    # TODO handling renaming
+                    part_rows = row[list(part_columns)].drop_duplicates(
+                        part_table.primary_key
+                    )
+                    new_row[part_table.name] = part_rows
+            # reassign row
+            row = new_row
+
+        if not isinstance(row, pandas.Series):
+            row = pandas.Series(row)
+
+        index = set(self.heading) & set(row.index)
+        # select self columns and convert to dictionary
+        master_input = row[list(index)].dropna().to_dict()
 
         def helper():
             # insert into self
@@ -258,16 +276,31 @@ class Table(QueryExpression):
 
             # insert into part tables
             for part_table in self.part_tables:
-                part_columns = set(part_table.heading) & set(rows.columns)
-                if not part_columns:
+                # if part_table exists insert otherwise skip part_table
+                if part_table.name not in row.index:
+                    if raise_part_missing:
+                        raise DataJointError(
+                            'part table name {0} missing in index {1}'.format(
+                                part_table.name, list(row.index)
+                            )
+                        )
                     continue
-                # select correct columns and drop duplicates
-                part_input = rows[list(part_columns)].drop_duplicates(
-                    part_table.primary_key
-                )
-                part_input = part_input.to_dict('records')
-                # try to insert into part table
-                part_table.insert(part_input, **kwargs)
+                # try to convert to pandas Dataframe
+                part_rows = row[part_table.name]
+                if part_rows is None:
+                    continue
+                if isinstance(part_rows, dict):
+                    part_rows = pandas.DataFrame([row[part_table.name]])
+                else:
+                    part_rows = pandas.DataFrame(row[part_table.name])
+                if len(part_rows) == 0:
+                    continue
+
+                for key in self.primary_key:
+                    # TODO dealing with renamed primary keys or skipped ones
+                    part_rows[key] = row[key]
+                # insert into part table
+                part_table.insert(part_rows.to_records(False), **kwargs)
 
         # if in transaction skip context
         if self.connection.in_transaction:
@@ -275,6 +308,25 @@ class Table(QueryExpression):
         else:
             with self.connection.transaction:
                 helper()
+
+    def insertp(self, rows, raise_part_missing=True, **kwargs):
+        """
+        Insert data records or Mapping for multiple entries and
+        its part tables.
+        For each row must contain keys corresponding to the part table names.
+        The values for the part table keys must of type dict, numpy.recarray,
+        or pandas.DataFrame. They do not have to contain the primary keys
+        of the master table
+
+        :param rows: a pandas DataFrame or numpy.recarray
+        """
+
+        rows = pandas.DataFrame(rows)
+
+        for index, row in rows.iterrows():
+            self.insert1p(
+                row, raise_part_missing=raise_part_missing, **kwargs
+            )
 
     def insert1(self, row, **kwargs):
         """
