@@ -52,7 +52,8 @@ default = OrderedDict({
     'enable_python_native_blobs': False,  # python-native/dj0 encoding support
     'enable_python_pickle_blobs': False,
     'enable_automakers': False,
-    'tmp_folder': None
+    'tmp_folder': None,
+    'backup_context': None
 })
 
 logger = logging.getLogger(__name__)
@@ -168,6 +169,28 @@ class Config(collections.MutableMapping):
             pass  # no invalid keys
 
         return spec
+
+    def get_from_context(self, context, key):
+        if context is not None and key in context:
+            return context[key]
+        elif (
+            self['backup_context'] is not None
+            and key in self['backup_context']
+        ):
+            return self['backup_context'][key]
+        elif context is not None:
+            # will raise KeyError
+            return context[key]
+        else:
+            raise KeyError("Key '{}' not in context".format(key))
+
+    def eval_from_context(self, context, string):
+        try:
+            return eval(string, context)
+        except Exception as e:
+            if self['backup_context'] is None:
+                raise e
+            return eval(string, self['backup_context'])
 
     @contextmanager
     def __call__(self, **kwargs):

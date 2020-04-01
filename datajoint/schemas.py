@@ -326,7 +326,7 @@ class VirtualModule(types.ModuleType):
     """
     A virtual module which will contain context for schema.
     """
-    def __init__(self, module_name, schema_name, *, create_schema=False, 
+    def __init__(self, module_name, schema_name, *, create_schema=False,
                     create_tables=False, connection=None, add_objects=None):
         """
         Creates a python module with the given name from the name of a schema on the server and

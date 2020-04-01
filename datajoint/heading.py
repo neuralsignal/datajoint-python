@@ -7,6 +7,7 @@ from .errors import DataJointError, _support_filepath_types, FILEPATH_FEATURE_SW
 from .declare import UUID_DATA_TYPE, SPECIAL_TYPES, TYPE_PATTERN, EXTERNAL_TYPES, NATIVE_TYPES
 from .utils import OrderedDict
 from .attribute_adapter import get_adapter, AttributeAdapter
+from .settings import config
 
 
 logger = logging.getLogger(__name__)
@@ -250,7 +251,7 @@ class Heading:
                 attr['comment'] = true_type['comment']
                 # if adapter in context use it, if not create artificial adapter
                 try:
-                    if context is None:
+                    if context is None and config['backup_context'] is None:
                         raise DataJointError('Declaration context is not set')
                     attr.update(adapter=get_adapter(context, adapter_name))
                 except DataJointError:

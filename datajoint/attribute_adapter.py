@@ -1,5 +1,6 @@
 import re
 from .errors import DataJointError, _support_adapted_types
+from .settings import config
 
 
 class AttributeAdapter:
@@ -38,7 +39,7 @@ def get_adapter(context, adapter_name):
         raise DataJointError('Support for Adapted Attribute types is disabled.')
     adapter_name = adapter_name.lstrip('<').rstrip('>')
     try:
-        adapter = context[adapter_name]
+        adapter = config.get_from_context(context, adapter_name)
     except KeyError:
         raise DataJointError(
             "Attribute adapter '{adapter_name}' is not defined.".format(adapter_name=adapter_name)) from None

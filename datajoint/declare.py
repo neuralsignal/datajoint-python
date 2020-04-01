@@ -7,6 +7,7 @@ import pyparsing as pp
 import logging
 from .errors import DataJointError, _support_filepath_types, FILEPATH_FEATURE_SWITCH
 from .attribute_adapter import get_adapter
+from .settings import config
 
 from .utils import OrderedDict
 
@@ -139,7 +140,7 @@ def compile_foreign_key(line, context, attributes, primary_key, attr_sql, foreig
         else:
             obsolete = True
     try:
-        ref = eval(result.ref_table, context)
+        ref = config.eval_from_context(context, result.ref_table)
     except NameError if obsolete else Exception:
         raise DataJointError('Foreign key reference %s could not be resolved' % result.ref_table)
 
