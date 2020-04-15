@@ -80,7 +80,8 @@ class Blob:
 
     def set_dj0(self):
         if not config.get('enable_python_native_blobs'):
-            raise DataJointError('v0.12+ python native blobs disabled. see also: https://github.com/datajoint/datajoint-python#python-native-blobs')
+            raise DataJointError("""v0.12+ python native blobs disabled.
+                See also: https://github.com/datajoint/datajoint-python#python-native-blobs""")
 
         self.protocol = b"dj0\0"  # when using new blob features
 
@@ -372,7 +373,7 @@ class Blob:
 
     def read_dict(self):
         return OrderedDict((self.read_blob(self.read_value()), self.read_blob(self.read_value()))
-                    for _ in range(self.read_value()))
+                           for _ in range(self.read_value()))
 
     def pack_dict(self, d):
         return b"\4" + len_u64(d) + b"".join(

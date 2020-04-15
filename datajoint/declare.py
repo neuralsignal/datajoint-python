@@ -463,7 +463,7 @@ def compile_attribute(line, in_key, foreign_key_sql, context):
     else:
         if match['default']:
             quote = (match['default'].split('(')[0].upper() not in CONSTANT_LITERALS
-                        and match['default'][0] not in '"\'')
+                     and match['default'][0] not in '"\'')
             match['default'] = 'NOT NULL DEFAULT ' + ('"%s"' if quote else "%s") % match['default']
         else:
             match['default'] = 'NOT NULL'

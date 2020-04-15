@@ -12,6 +12,7 @@ from .errors import DataJointError
 from .settings import config
 from .utils import OrderedDict, safe_write
 
+
 class key:
     """
     object that allows requesting the primary key as an argument in expression.fetch()
@@ -76,7 +77,7 @@ def _get(connection, attr, data, squeeze, download_path, apply_adapter):
         # 4. Otherwise, download the remote file and return the new filepath
         _uuid = uuid.UUID(bytes=data) if attr.is_external else None
         attachment_name = (extern.get_attachment_name(_uuid) if attr.is_external
-                    else data.split(b"\0", 1)[0].decode())
+                           else data.split(b"\0", 1)[0].decode())
         local_filepath = Path(download_path) / attachment_name
         if local_filepath.is_file():
             attachment_checksum = _uuid if attr.is_external else hash.uuid_from_buffer(data)
@@ -176,7 +177,8 @@ class Fetch:
         if not (attrs or as_dict) and format is None:
             format = config['fetch_format']  # default to array
             if format not in {"array", "frame"}:
-                raise DataJointError('Invalid entry "{}" in datajoint.config["fetch_format"]: use "array" or "frame"'.format(format))
+                raise DataJointError('Invalid entry "{}" in datajoint.config["fetch_format"]: use "array" or "frame"'.format(
+                    format))
 
         if limit is None and offset is not None:
             warnings.warn('Offset set, but no limit. Setting limit to a large number. '
@@ -211,7 +213,7 @@ class Fetch:
                 try:
                     ret = np.array(ret, dtype=record_type)
                 except Exception as e:
-                    raise
+                    raise e
                 for name in heading:
                     ret[name] = list(map(partial(get, heading[name]), ret[name]))
                 if format == "frame":

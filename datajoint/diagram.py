@@ -189,7 +189,8 @@ else:
         def __add__(self, arg):
             """
             :param arg: either another Diagram or a positive integer.
-            :return: Union of the diagrams when arg is another Diagram or an expansion downstream when arg is a positive integer.
+            :return: Union of the diagrams when arg is another Diagram
+                     or an expansion downstream when arg is a positive integer.
             """
             self = Diagram(self)   # copy
             try:
@@ -210,7 +211,8 @@ else:
         def __sub__(self, arg):
             """
             :param arg: either another Diagram or a positive integer.
-            :return: Difference of the diagrams when arg is another Diagram or an expansion upstream when arg is a positive integer.
+            :return: Difference of the diagrams when arg is another Diagram or
+                     an expansion upstream when arg is a positive integer.
             """
             self = Diagram(self)   # copy
             try:
