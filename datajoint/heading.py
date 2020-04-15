@@ -288,7 +288,8 @@ class Heading:
                     unsupported=False,
                     is_attachment=category in ('INTERNAL_ATTACH', 'EXTERNAL_ATTACH'),
                     is_filepath=category == 'FILEPATH',
-                    is_blob=category in ('INTERNAL_BLOB', 'EXTERNAL_BLOB'),  # INTERNAL_BLOB is not a custom type but is included for completeness
+                    # INTERNAL_BLOB is not a custom type but is included for completeness
+                    is_blob=category in ('INTERNAL_BLOB', 'EXTERNAL_BLOB'),
                     uuid=category == 'UUID',
                     is_external=category in EXTERNAL_TYPES,
                     store=attr['type'].split('@')[1] if category in EXTERNAL_TYPES else None)
@@ -308,7 +309,7 @@ class Heading:
                 is_integer = TYPE_PATTERN['INTEGER'].match(attr['type'])
                 is_float = TYPE_PATTERN['FLOAT'].match(attr['type'])
                 if is_integer and not attr['nullable'] or is_float:
-                    is_unsigned = bool(re.match('\sunsigned', attr['type'], flags=re.I))
+                    is_unsigned = bool(re.match('sunsigned', attr['type'], flags=re.I))
                     t = re.sub(r'\(.*\)', '', attr['type'])    # remove parentheses
                     t = re.sub(r' unsigned$', '', t)   # remove unsigned
                     assert (t, is_unsigned) in numeric_types, 'dtype not found for type %s' % t
