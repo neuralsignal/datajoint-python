@@ -17,7 +17,7 @@ supported_class_attrs = {
     'primary_key', 'proj', 'aggr',
     'fetch', 'fetch1', 'head', 'tail',
     'insert', 'insert1', 'insert1p', 'part_tables',
-    'drop', 'drop_quick', 'delete', 'delete_quick'}
+    'drop', 'drop_quick', 'delete', 'delete_quick', 'update1'}
 
 
 class OrderedClass(type):
