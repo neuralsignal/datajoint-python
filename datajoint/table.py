@@ -529,7 +529,7 @@ class Table(QueryExpression):
                 else:
                     commit_transaction = not safe or force
 
-        return message, commit_transaction, conn
+        return message, commit_transaction, conn, already_in_transaction
 
     def delete(self, verbose=True, force=False):
         """
@@ -537,11 +537,14 @@ class Table(QueryExpression):
         User is prompted for confirmation if config['safemode'] is set to True.
         """
         safe = config['safemode']
-        message, commit_transaction, conn = self._delete(verbose, force)
+        message, commit_transaction, conn, already_in_transaction = \
+            self._delete(verbose, force)
 
         print(message)
 
-        if commit_transaction or user_choice("Proceed?", default='no') == 'yes':
+        if already_in_transaction:
+            pass
+        elif commit_transaction or user_choice("Proceed?", default='no') == 'yes':
             conn.commit_transaction()
             if verbose or safe:
                 print('Commited.')
@@ -563,7 +566,7 @@ class Table(QueryExpression):
         else:
             logger.info("Nothing to drop: table %s is not declared" % self.full_table_name)
 
-    def drop(self):
+    def drop(self, force=False):
         """
         Drop the table and all tables that reference it, recursively.
         User is prompted for confirmation if config['safemode'] is set to True.
@@ -575,7 +578,7 @@ class Table(QueryExpression):
         do_drop = True
         tables = [table for table in self.connection.dependencies.descendants(self.full_table_name)
                   if not table.isdigit()]
-        if config['safemode']:
+        if config['safemode'] and not force:
             for table in tables:
                 print(table, '(%d tuples)' % len(FreeTable(self.connection, table)))
             do_drop = user_choice("Proceed?", default='no') == 'yes'

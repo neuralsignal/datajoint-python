@@ -279,7 +279,7 @@ else:
                                  size=0.05*scale, fixed=True),
                 Manual: dict(shape='box', color="#00FF0030", fontcolor='darkgreen', fontsize=round(scale*10),
                              size=0.4*scale, fixed=False),
-                Settingstable: dict(shape='box', color="#00FF0030", fontcolor='darkgreen', fontsize=round(scale*10),
+                Settingstable: dict(shape='box', color="#00FF0030", fontcolor='orange', fontsize=round(scale*8),
                              size=0.4*scale, fixed=False),
                 Lookup: dict(shape='plaintext', color='#00000020', fontcolor='black', fontsize=round(scale*8),
                              size=0.4*scale, fixed=False),

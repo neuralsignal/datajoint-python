@@ -62,7 +62,7 @@ class AutoMake(AutoPopulate):
         if settings['restrictions'] is not None:
             restrictions = [settings['restrictions']] + list(restrictions)
 
-        super().populate(
+        return super().populate(
             setting_restrict, *restrictions,
             **kwargs
         )
