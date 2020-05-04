@@ -50,9 +50,9 @@ default = OrderedDict({
     'display.width': 14,
     'display.show_tuple_count': True,
     'database.use_tls': None,
-    'enable_python_native_blobs': False,  # python-native/dj0 encoding support
-    'enable_python_pickle_blobs': False,
-    'enable_automakers': False,
+    'enable_python_native_blobs': True,  # python-native/dj0 encoding support
+    'enable_python_pickle_blobs': True,
+    'enable_automakers': True,
     'tmp_folder': None,
     'backup_context': None
 })
