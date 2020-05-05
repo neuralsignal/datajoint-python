@@ -48,6 +48,7 @@ class Settingstable(UserTable):
         entry_settings : longblob # dictionary
         fetch_method = 'fetch1' : enum('fetch', 'fetch1', 'farfetch', 'farfetch1')
         fetch_tables = null : longblob # dictionary of dict(table_name: projection)
+        assign_output = null : longblob # overrides make_compatible to simply assign the output to a column
         restrictions = null : longblob # dictionary or list of restrictions
         parse_unique = null : longblob # list of unique entries for fetch
         created = CURRENT_TIMESTAMP : timestamp
@@ -166,6 +167,9 @@ class Settingstable(UserTable):
             test_joined_table = None
 
             for table, proj in fetch_tables.items():
+                # if not string assume if table instance or class
+                if not isinstance(table, str):
+                    table = table.full_table_name
                 # assume if ` in table then it is in proper notation
                 if table.startswith('`'):
                     if table not in nodes:
@@ -344,16 +348,16 @@ class Settingstable(UserTable):
                 # here it is simply considered a function
                 if isinstance(func[0], bytes):
                     # in this case it is a python file that was saved
-                    assert config['tmp_folder'] is not None, (
-                        "Must provide tmp folder in config if "
-                        "inserting/fetching python files into settings table."
-                    )
+                    if config['tmp_folder'] is None:
+                        tmp_folder = '.'
+                    else:
+                        tmp_folder = config['tmp_folder']
 
                     filename, content = func[0].split(b'\0', 1)
                     filename = filename.decode()
                     content = content.decode()
 
-                    temporary_path = Path(config['tmp_folder']) / filename
+                    temporary_path = Path(tmp_folder) / filename
 
                     safe_write(temporary_path, content)
 
@@ -364,10 +368,10 @@ class Settingstable(UserTable):
 
                     # change working directory for priority import
                     cwd = os.getcwd()
-                    os.chdir(config['tmp_folder'])
+                    os.chdir(tmp_folder)
                     # add to sys path if necessary
-                    if config['tmp_folder'] not in sys.path:
-                        sys.path.append(config['tmp_folder'])
+                    if tmp_folder not in sys.path:
+                        sys.path.append(tmp_folder)
                     try:
                         func = func_from_tuple(func)
                         os.chdir(cwd)
@@ -455,17 +459,21 @@ class Settingstable(UserTable):
 
         # check python version
         if (new_python_version is None) or (old_python_version is None):
-            warnings.warn((
-                'No python version checking for function "{func}" available.'
-            ).format(func=func))
+            if config['automaker_warnings']:
+                warnings.warn((
+                    'No python version checking for function '
+                    '"{func}" available.'
+                ).format(func=func))
         elif new_python_version != old_python_version:
-            warnings.warn((
-                'Old python version "{old_python_version}" '
-                'does not match current python version "{new_python_version}"'
-            ).format(
-                new_python_version=new_python_version,
-                old_python_version=old_python_version
-            ))
+            if config['automaker_warnings']:
+                warnings.warn((
+                    'Old python version "{old_python_version}" '
+                    'does not match current python '
+                    'version "{new_python_version}"'
+                ).format(
+                    new_python_version=new_python_version,
+                    old_python_version=old_python_version
+                ))
 
         _check_package_status(
             func,
@@ -644,6 +652,19 @@ class Settingstable(UserTable):
                 'just {required_proj}'
             ).format(left_parse=left_parse, required_proj=required_proj)
 
+    def _check_assign_output(self, row):
+
+        assign_output = row.get('assign_output', None)
+
+        if (
+            assign_output is not None
+            and assign_output
+            not in self.child_table.heading.secondary_attributes
+        ):
+            raise DataJointError((
+                '"{}" not in secondary columns of table "{}".'
+            ).format(assign_output, self.child_table.full_table_name))
+
     def insert(self, *args, **kwargs):
         raise NotImplementedError(
             'For a Settingstable class only'
@@ -691,6 +712,7 @@ class Settingstable(UserTable):
 
         self._check_restrictions(row.get('restrictions', None))
         self._check_parse_unique(row.get('parse_unique', None), required_proj)
+        self._check_assign_output(row)
 
         # not implemented farfetch
         if 'farfetch' in row.get('fetch_method', 'fetch1'):
@@ -783,6 +805,8 @@ def _check_package_status(
     new_package, old_package,
     new_version, old_version
 ):
+    if not config['automaker_warnings']:
+        return
     # check package and package version
     if (new_package is None) or (old_package is None):
         warnings.warn((
@@ -817,10 +841,11 @@ def _get_conda_status(func_status):
     try:
         import conda.cli.python_api as conda_api
     except ImportError:
-        warnings.warn(
-            'Did not perform getting conda status: '
-            'Conda Python API not installed.'
-        )
+        if config['automaker_warnings']:
+            warnings.warn(
+                'Did not perform getting conda status: '
+                'Conda Python API not installed.'
+            )
         return
 
     try:
@@ -828,16 +853,19 @@ def _get_conda_status(func_status):
             conda_api.Commands.LIST, '--json', use_exception_handler=True
         )
     except Exception:
-        warnings.warn(
-            'Could not perform "conda list --json". '
-            'Not conda status test performed'
-        )
+        if config['automaker_warnings']:
+            warnings.warn(
+                'Could not perform "conda list --json". '
+                'No conda status test performed'
+            )
         return
 
     if return_code:
-        warnings.warn(
-            f'Could not get conda environment list; Error message:\n{stderr}'
-        )
+        if config['automaker_warnings']:
+            warnings.warn((
+                'Could not get conda environment list; Error message:\n{stderr}'
+                '\n{error}.'
+            ).format(stderr=stderr, error=stdout['error']))
         return
 
     conda_list = pandas.DataFrame(json.loads(stdout))[CONDA_KEEP]
@@ -849,6 +877,8 @@ def _check_conda_status(
     func,
     new_conda_list, old_conda_list
 ):
+    if not config['automaker_warnings']:
+        return
     # check conda list
     if (new_conda_list is None) or (old_conda_list is None):
         warnings.warn((
@@ -902,9 +932,10 @@ def _get_git_status(func_status, module, func):
     try:
         import git
     except ImportError:
-        warnings.warn(
-            'Did not perform getting git status: '
-            'Git Python API not installed.')
+        if config['automaker_warnings']:
+            warnings.warn(
+                'Did not perform getting git status: '
+                'Git Python API not installed.')
         return
 
     # get directory name of module
@@ -920,7 +951,7 @@ def _get_git_status(func_status, module, func):
             sha1, branch = repo.head.commit.name_rev.split()
             # check if files were modified
             modified = (repo.git.status().find('modified') > 0)
-            if modified:
+            if modified and config['automaker_warnings']:
                 warnings.warn(
                     'You have uncommited changes. '
                     'Consider committing before running populate.'
@@ -941,6 +972,7 @@ def _get_git_status(func_status, module, func):
             if (
                 'package' not in func_status
                 and 'version' not in func_status
+                and config['automaker_warnings']
             ):
                 warnings.warn((
                     'No git directory was found for module in {path} for '
@@ -958,6 +990,8 @@ def _check_git_status(
     old_branch, new_branch,
     new_modified, old_modified
 ):
+    if not config['automaker_warnings']:
+        return
     # check git commit
     if (new_sha1 is None) or (old_sha1 is None):
         return

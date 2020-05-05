@@ -29,6 +29,7 @@ class AutoMake(AutoPopulate):
 
     _settings_table = None
     _settings = None
+    _verbose = False
 
     def make_compatible(self, data):
         """function that can be defined for each class to transform data after
@@ -52,12 +53,18 @@ class AutoMake(AutoPopulate):
         """
 
         setting_restrict = {self.settings_name: settings_name}
+        settings_table = self.settings_table & setting_restrict
 
-        settings = (self.settings_table & setting_restrict).fetch1()
+        if len(settings_table) != 1:
+            raise DataJointError(
+                'Setting "{}" does not exist'.format(settings_name)
+            )
+        settings = (settings_table).fetch1()
         settings['fetch_tables'] = (
             settings['fetch_tables'] & AndList(restrictions)
         )
         self._settings = settings
+        self._verbose = kwargs.pop('verbose', False)
 
         if settings['restrictions'] is not None:
             restrictions = [settings['restrictions']] + list(restrictions)
@@ -109,7 +116,10 @@ class AutoMake(AutoPopulate):
         func = self._settings['func']
         output = func(*args, **kwargs)
 
-        output = self.make_compatible(output)
+        if self._settings['assign_output'] is None:
+            output = self.make_compatible(output)
+        else:
+            output = {self._settings['assign_output']: output}
 
         if output is None:
             warnings.warn('output of function is None for key {}'.format(key))
@@ -150,6 +160,10 @@ class AutoMake(AutoPopulate):
             self.insert1p(output)
         else:
             self.insert1(output)
+
+        # verbosity
+        if self._verbose:
+            print('Populated entry: {key}'.format(key=key))
 
     @staticmethod
     def _create_kwargs(

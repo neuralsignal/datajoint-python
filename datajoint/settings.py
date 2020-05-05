@@ -53,6 +53,7 @@ default = OrderedDict({
     'enable_python_native_blobs': True,  # python-native/dj0 encoding support
     'enable_python_pickle_blobs': True,
     'enable_automakers': True,
+    'automaker_warnings': True,
     'tmp_folder': None,
     'backup_context': None
 })

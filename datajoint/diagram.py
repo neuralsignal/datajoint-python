@@ -282,36 +282,36 @@ else:
                     fontcolor='#FF880080', fontsize=round(scale*0),
                     size=0.05*scale, fixed=True),
                 Manual: dict(
-                    shape='box', color='darkgreen',
-                    fontcolor='white', fontsize=round(scale*10),
+                    shape='box', color='greenyellow',
+                    fontcolor='black', fontsize=round(scale*10),
                     size=0.4*scale, fixed=False),
                 Settingstable: dict(
-                    shape='box', color='goldenrod',
-                    fontcolor='white', fontsize=round(scale*8),
+                    shape='box', color='coral',
+                    fontcolor='black', fontsize=round(scale*8),
                     size=0.4*scale, fixed=False),
                 Lookup: dict(
                     shape='plaintext', color='azure4',
-                    fontcolor='white', fontsize=round(scale*8),
+                    fontcolor='black', fontsize=round(scale*8),
                     size=0.4*scale, fixed=False),
                 Computed: dict(
-                    shape='ellipse', color='darkorchid3',
-                    fontcolor='white', fontsize=round(scale*10),
+                    shape='ellipse', color='magenta',
+                    fontcolor='black', fontsize=round(scale*10),
                     size=0.3*scale, fixed=True),
                 Imported: dict(
-                    shape='ellipse', color='navyblue',
-                    fontcolor='white', fontsize=round(scale*10),
+                    shape='ellipse', color='skyblue',
+                    fontcolor='black', fontsize=round(scale*10),
                     size=0.4*scale, fixed=False),
                 AutoComputed: dict(
-                    shape='ellipse', color='darkorchid4',
-                    fontcolor='white', fontsize=round(scale*10),
+                    shape='ellipse', color='magenta1',
+                    fontcolor='black', fontsize=round(scale*10),
                     size=0.3*scale, fixed=True),
                 AutoImported: dict(
-                    shape='ellipse', color='navy',
-                    fontcolor='white', fontsize=round(scale*10),
+                    shape='ellipse', color='skyblue1',
+                    fontcolor='black', fontsize=round(scale*10),
                     size=0.4*scale, fixed=False),
                 Part: dict(
                     shape='plaintext', color='azure4',
-                    fontcolor='white', fontsize=round(scale*8),
+                    fontcolor='black', fontsize=round(scale*8),
                     size=0.1*scale, fixed=False)}
             node_props = {node: label_props[d['node_type']] for node, d in dict(graph.nodes(data=True)).items()}
 
