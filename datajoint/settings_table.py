@@ -6,11 +6,18 @@ import inspect
 import collections
 import warnings
 import sys
+import pickle
 import os
 from pathlib import Path
 import json
 import numpy as np
 import pandas
+
+try:
+    import cloudpickle
+    pickle.dumps = cloudpickle.dumps
+except ImportError:
+    pass
 
 from .table import FreeTable
 from .user_tables import UserTable, _base_regexp
@@ -150,7 +157,10 @@ class Settingstable(UserTable):
             assert not required_left, \
                 'query expression does not contains all required projections.'
 
-            insert_fetch_tables = fetch_tables
+            # insert_fetch_tables = fetch_tables
+            insert_fetch_tables = pickle.dumps(
+                fetch_tables, protocol=pickle.HIGHEST_PROTOCOL
+            )
 
         elif isinstance(fetch_tables, collections.Mapping):
             assert len(fetch_tables) != 0, \
@@ -284,6 +294,13 @@ class Settingstable(UserTable):
             else:
                 return fetch_tables & restrictions
 
+        elif isinstance(fetch_tables, bytes):
+            fetch_tables = pickle.loads(fetch_tables)
+            if restrictions is None:
+                return fetch_tables
+            else:
+                return fetch_tables & restrictions
+
         else:
             # load graph
             self.connection.dependencies.load()
@@ -387,6 +404,9 @@ class Settingstable(UserTable):
                     'tuple must have two or four '
                     'elements, it has {}'.format(len(func))
                 )
+        elif isinstance(func, bytes):
+            # loading pickle function
+            func = pickle.loads(func)
 
         return func
 
@@ -603,6 +623,9 @@ class Settingstable(UserTable):
                         + b'\0'
                         + python_file.read_bytes()
                     ), func[1])
+        else:
+            # make binary
+            func = pickle.dumps(func, protocol=pickle.HIGHEST_PROTOCOL)
 
         return func
 
