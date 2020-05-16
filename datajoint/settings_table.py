@@ -366,9 +366,9 @@ class Settingstable(UserTable):
                 if isinstance(func[0], bytes):
                     # in this case it is a python file that was saved
                     if config['tmp_folder'] is None:
-                        tmp_folder = '.'
+                        tmp_folder = os.path.abspath('.')
                     else:
-                        tmp_folder = config['tmp_folder']
+                        tmp_folder = os.path.abspath(config['tmp_folder'])
 
                     filename, content = func[0].split(b'\0', 1)
                     filename = filename.decode()
@@ -383,18 +383,15 @@ class Settingstable(UserTable):
                         func[1]
                     )
 
-                    # change working directory for priority import
-                    cwd = os.getcwd()
-                    os.chdir(tmp_folder)
                     # add to sys path if necessary
                     if tmp_folder not in sys.path:
-                        sys.path.append(tmp_folder)
-                    try:
-                        func = func_from_tuple(func)
-                        os.chdir(cwd)
-                    except DataJointError as e:
-                        os.chdir(cwd)
-                        raise e
+                        try:
+                            # put after current directory
+                            index = sys.path.index('')
+                            sys.path.insert(index+1, tmp_folder)
+                        except ValueError:
+                            sys.path.append(tmp_folder)
+                    func = func_from_tuple(func)
 
                 else:
                     # a normal function was saved
