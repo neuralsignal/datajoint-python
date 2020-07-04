@@ -107,8 +107,7 @@ class Settingstable(UserTable):
     def _used_params(global_settings, entry_settings):
         return list(global_settings) + list(entry_settings)
 
-    @staticmethod
-    def _required_proj(entry_settings):
+    def _get_required_proj(self, entry_settings):
         """
         """
 
@@ -119,6 +118,8 @@ class Settingstable(UserTable):
                 required_proj.append(value)
             elif isinstance(value, Sequence):
                 required_proj.extend(value)
+            elif isinstance(value, dict):
+                required_proj.extend(self._get_required_proj(value))
 
         return required_proj
 
@@ -725,7 +726,7 @@ class Settingstable(UserTable):
         )
 
         # required to be contained in the final joined table
-        required_proj = self._required_proj(row['entry_settings'])
+        required_proj = self._get_required_proj(row['entry_settings'])
 
         row['fetch_tables'] = self._check_fetch_tables(
             row.get('fetch_tables', None), required_proj)
@@ -776,7 +777,7 @@ class Settingstable(UserTable):
         row['func'] = row['func']['func']
 
         if get_joined_table:
-            required_proj = self._required_proj(row['entry_settings'])
+            required_proj = self._get_required_proj(row['entry_settings'])
             # get joined tables / primary parent tables
             row['fetch_tables'] = self._get_joined_table(
                 row['fetch_tables'],

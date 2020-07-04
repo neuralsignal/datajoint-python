@@ -52,6 +52,8 @@ class AutoMake(AutoPopulate):
         :param max_calls: if not None, populates at max that many keys
         """
 
+        # TODO dealing with restrictions
+
         setting_restrict = {self.settings_name: settings_name}
         settings_table = self.settings_table & setting_restrict
 
@@ -66,11 +68,10 @@ class AutoMake(AutoPopulate):
         self._settings = settings
         self._verbose = kwargs.pop('verbose', False)
 
-        if settings['restrictions'] is not None:
-            restrictions = [settings['restrictions']] + list(restrictions)
-
         return super().populate(
-            setting_restrict, *restrictions,
+            setting_restrict,
+            self._settings['fetch_tables'].proj(),
+            *restrictions,
             **kwargs
         )
 
