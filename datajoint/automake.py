@@ -78,6 +78,9 @@ class AutoMake(AutoPopulate):
         """automated make method
         """
 
+        if self._verbose:
+            print(f"Start autopopulation for key `{key}`")
+
         table = self._settings['fetch_tables'] & key
 
         if 'fetch1' in self._settings['fetch_method']:
