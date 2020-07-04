@@ -106,9 +106,6 @@ class AutoMake(AutoPopulate):
                     # TODO check if unique?
                     entry[column] = value[0]
 
-                else:
-                    entry[column] = np.array(value)
-
         args, kwargs = self._create_kwargs(
             entry,
             self._settings['entry_settings'],
