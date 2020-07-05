@@ -914,7 +914,7 @@ def _check_conda_status(
             new_conda_list, old_conda_list,
             on='name',
             how='right',
-            suffix=('_new', '_old')
+            suffixes=('_new', '_old')
         )
         # packages missing in new version
         missing_packages = merged_conda_list['version_new'].isnull()
