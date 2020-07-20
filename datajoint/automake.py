@@ -158,7 +158,7 @@ class AutoMake(AutoPopulate):
 
         # insert into table and part_table
         if self.has_part_tables:
-            self.insert1p(output)
+            self.insert1p(output, raise_part_missing=False)
         else:
             self.insert1(output)
 
