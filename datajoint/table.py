@@ -277,22 +277,27 @@ class Table(QueryExpression):
             # insert into part tables
             for part_table in self.part_tables:
                 # if part_table exists insert otherwise skip part_table
-                if part_table.name not in row.index:
+                part_table_name = (
+                    to_camel_case(part_table.table_name)
+                    if not hasattr(part_table, 'name')
+                    else part_table.name
+                )
+                if part_table_name not in row.index:
                     if raise_part_missing:
                         raise DataJointError(
                             'part table name {0} missing in index {1}'.format(
-                                part_table.name, list(row.index)
+                                part_table_name, list(row.index)
                             )
                         )
                     continue
                 # try to convert to pandas Dataframe
-                part_rows = row[part_table.name]
+                part_rows = row[part_table_name]
                 if part_rows is None:
                     continue
                 if isinstance(part_rows, dict):
-                    part_rows = pandas.DataFrame([row[part_table.name]])
+                    part_rows = pandas.DataFrame([row[part_table_name]])
                 else:
-                    part_rows = pandas.DataFrame(row[part_table.name])
+                    part_rows = pandas.DataFrame(row[part_table_name])
                 if len(part_rows) == 0:
                     continue
 
