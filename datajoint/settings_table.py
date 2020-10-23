@@ -63,7 +63,7 @@ class Settingstable(UserTable):
 
     @ClassProperty
     def child_table(cls):
-        raise NotADirectoryError('child table attribute for settings table.')
+        raise NotImplementedError('child table attribute for settings table.')
 
     @property
     def settings_name(self):
