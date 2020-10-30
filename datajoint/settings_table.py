@@ -251,7 +251,7 @@ class Settingstable(UserTable):
                 else:
                     raise DataJointError(
                         'projection must be of type two-tuple, sequence, '
-                        'or mapping, but is'.format(type(proj))
+                        'or mapping, but is of type {}'.format(type(proj))
                     )
 
                 try:
@@ -708,6 +708,11 @@ class Settingstable(UserTable):
                 'following key aliases in your dictionary for insertion: '
                 '"settings_name", "settings", and "populate_settings".'
             )
+
+        # remove inferred/default attributes
+        row.pop('args', None)
+        row.pop('kwargs', None)
+        row.pop('created', None)
 
         row['func'] = self._get_func_attr(row['func'])
 

@@ -180,7 +180,7 @@ class AutoMake(AutoPopulate):
             if isinstance(arg, str):
                 kwargs[kw] = entry[arg]
             elif isinstance(arg, Sequence):
-                kwargs[kw] = arg.__class__(
+                kwargs[kw] = type(arg)(
                     [entry[iarg] for iarg in arg]
                 )
             elif isinstance(arg, collections.Mapping):
