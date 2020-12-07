@@ -36,4 +36,6 @@ def uuid_from_buffer(buffer=b"", *, init_string=""):
 
 
 def uuid_from_file(filepath, *, init_string=""):
-    return uuid_from_stream(Path(filepath).open("rb"), init_string=init_string)
+    with Path(filepath).open("rb") as f:
+        uuid_obj = uuid_from_stream(f, init_string=init_string)
+    return uuid_obj
