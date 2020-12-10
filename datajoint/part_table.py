@@ -4,7 +4,7 @@
 from .utils import from_camel_case, ClassProperty
 from .errors import DataJointError
 from .user_tables import UserTable, Manual, Lookup, Imported, Computed, \
-    _base_regexp, supported_class_attrs
+    _base_regexp
 from .auto_tables import AutoComputed, AutoImported
 
 
@@ -17,7 +17,6 @@ class Part(UserTable):
     """
 
     _connection = None
-    _heading = None
     _master = None
 
     tier_regexp = r'(?P<master>' + '|'.join(
