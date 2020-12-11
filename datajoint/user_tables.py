@@ -113,7 +113,7 @@ class UserTable(Table, metaclass=OrderedClass):
     def full_table_name(cls):
         if cls not in {
             dj.Manual, dj.Imported, dj.Lookup, dj.Computed, dj.Part,
-            dj.AutoImported, dj.AutoComputed,
+            dj.AutoImported, dj.AutoComputed, dj.Settingstable,
             UserTable
         }:
             if cls.database is None:
