@@ -80,7 +80,7 @@ class AutoMake(AutoPopulate):
         """
 
         if self._verbose:
-            print(f"Start autopopulation for key `{key}`")
+            print("Start autopopulation for key `{0}`".format(key))
 
         table = self._settings['fetch_tables'] & key
 
@@ -93,7 +93,7 @@ class AutoMake(AutoPopulate):
         else:
             if len(table) == 0:
                 raise DataJointError(
-                    'empty joined table for key {}'.format(key)
+                    'empty joined table for key {0}'.format(key)
                 )
 
             entry = getattr(
@@ -123,7 +123,7 @@ class AutoMake(AutoPopulate):
             output = {self._settings['assign_output']: output}
 
         if output is None:
-            warnings.warn('output of function is None for key {}'.format(key))
+            warnings.warn('output of function is None for key {0}'.format(key))
             output = {}
 
         # Test if dict or dataframe, convert to dataframe if necessary
@@ -191,7 +191,7 @@ class AutoMake(AutoPopulate):
                 raise DataJointError(
                     "argument in entry settings must be "
                     "str, tuple, or list, but is "
-                    f"{type(arg)} for {kw}"
+                    "{0} for {1}".format(type(arg), kw)
                 )
 
         if settings_args is not None:

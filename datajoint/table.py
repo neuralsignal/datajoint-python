@@ -489,10 +489,11 @@ class Table(QueryExpression):
         self._log(query[:255])
         return count
 
-    def _delete_cascade(self):
+    def _delete_cascade(self, return_message=False):
         """service function to perform cascading deletes recursively."""
         max_attempts = 50
         delete_count = 0
+        message = ""
         for _ in range(max_attempts):
             try:
                 delete_count += self.delete_quick(get_count=True)
@@ -516,17 +517,27 @@ class Table(QueryExpression):
                     child &= self.proj(**dict(zip(fk_attrs, pk_attrs)))
                 else:
                     child &= self.proj()
-                delete_count += child._delete_cascade()
+                if return_message:
+                    delete_count_, message_ = child._delete_count()
+                    delete_count += delete_count_
+                    message += message_
+                else:
+                    delete_count += child._delete_cascade()
             else:
-                print("Deleting {count} rows from {table}".format(
-                    count=delete_count, table=self.full_table_name))
+                message_ = "Deleting {count} rows from {table}\n".format(
+                    count=delete_count, table=self.full_table_name
+                )
+                if return_message:
+                    message += message_
+                else:
+                    print(message_)
                 break
         else:
             raise DataJointError('Exceeded maximum number of delete attempts.')
-        return delete_count
-
-    def _delete(self, verbose=True, force=False):
-        raise NotImplementedError("`_delete`")
+        if return_message:
+            return delete_count, message
+        else:
+            return delete_count
 
     def delete(self, transaction=True, safemode=None):
         """
