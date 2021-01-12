@@ -531,7 +531,7 @@ class Table(QueryExpression):
                 else:
                     child &= self.proj()
                 if return_message:
-                    delete_count_, message_ = child._delete_count()
+                    delete_count_, message_ = child._delete_cascade()
                     delete_count += delete_count_
                     message += message_
                 else:
