@@ -531,11 +531,13 @@ class Table(QueryExpression):
                 else:
                     child &= self.proj()
                 if return_message:
-                    delete_count_, message_ = child._delete_cascade()
+                    delete_count_, message_ = child._delete_cascade(
+                        return_message
+                    )
                     delete_count += delete_count_
                     message += message_
                 else:
-                    delete_count += child._delete_cascade()
+                    delete_count += child._delete_cascade(return_message)
             else:
                 message_ = "Deleting {count} rows from {table}\n".format(
                     count=delete_count, table=self.full_table_name
