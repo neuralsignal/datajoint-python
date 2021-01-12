@@ -277,19 +277,10 @@ class AutoMake(AutoPopulate):
         if self.target.full_table_name not in self.connection.dependencies:
             self.connection.dependencies.load()
 
-        for parent_name, fk_props in self.target.parents(primary=True).items():
+        for freetable in self.target.parents(primary=True, as_objects=True):
 
-            if parent_name == self.settings_table.full_table_name:
+            if freetable.full_table_name == self.settings_table.full_table_name:
                 continue
-
-            elif not parent_name.isdigit():  # simple foreign key
-                freetable = FreeTable(self.connection, parent_name)
-
-            else:
-                grandparent = list(
-                    self.connection.dependencies.in_edges(parent_name)
-                )[0][0]
-                freetable = FreeTable(self.connection, grandparent)
 
             proj_columns = list(set(freetable.heading.names) & set(columns))
             proj_table = freetable.proj(*proj_columns)
