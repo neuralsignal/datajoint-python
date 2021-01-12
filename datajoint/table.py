@@ -190,15 +190,6 @@ class Table(QueryExpression):
 
         return bool(self.part_tables)
 
-    def children_dict(self, primary=None):
-        """
-        :param primary: if None, then all children are returned. If True, then only foreign keys composed of
-            primary key attributes are considered.  If False, the only foreign keys including at least one non-primary
-            attribute are considered.
-        :return: dict of tables with foreign keys referencing self
-        """
-        return self.connection.dependencies.children(self.full_table_name, primary)
-
     def children(self, primary=None, as_objects=False, foreign_key_info=False):
         """
         :param primary: if None, then all children are returned. If True, then only foreign keys composed of
@@ -751,16 +742,7 @@ class Table(QueryExpression):
         if reload or not self.connection.dependencies:
             self.connection.dependencies.load()
 
-        children = self.children_dict()
-
-        for child_name, child in children.items():
-            if child['aliased']:
-                aliased_children = self.connection.dependencies.children(
-                    child_name
-                )
-                # there should only be one aliased child
-                child_name = list(aliased_children)[0]
-                child = aliased_children[child_name]
+        for child_name, child in self.children(foreign_key_info=True):
 
             child_table = FreeTable(self.connection, child_name)
             attr_map = {
