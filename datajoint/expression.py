@@ -252,6 +252,9 @@ class QueryExpression:
                           isinstance(self, Union) or any(
             n for n in other.heading.new_attributes if (
                     n in self_clash or other.heading[n].attribute_expression.strip('`') in other_clash)))
+        # Quick fix (TODO)
+        need_subquery1 = True
+        need_subquery2 = True
         if need_subquery1:
             self = self.make_subquery()
         if need_subquery2:
