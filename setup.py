@@ -21,7 +21,7 @@ with open(path.join(here, 'requirements.txt')) as f:
 
 setup(
     name='datajoint',
-    version=__version__+'dev1',
+    version=__version__,
     description="A relational data pipeline framework.",
     long_description=long_description,
     author='Dimitri Yatsenko',
