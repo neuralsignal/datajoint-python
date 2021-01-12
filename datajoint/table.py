@@ -157,14 +157,7 @@ class Table(QueryExpression):
             part_tables = []
             self_table_name = self.full_table_name.replace('`', '')
 
-            for child_table_name, child_info in self.children().items():
-
-                if child_info['aliased']:
-                    aliased_children = self.connection.dependencies.children(
-                        child_table_name
-                    )
-                    # there should only be one aliased child
-                    child_table_name = list(aliased_children)[0]
+            for child_table_name in self.children():
 
                 child_table_name = child_table_name.replace('`', '')
 
@@ -196,6 +189,15 @@ class Table(QueryExpression):
         """
 
         return bool(self.part_tables)
+
+    def children_dict(self, primary=None):
+        """
+        :param primary: if None, then all children are returned. If True, then only foreign keys composed of
+            primary key attributes are considered.  If False, the only foreign keys including at least one non-primary
+            attribute are considered.
+        :return: dict of tables with foreign keys referencing self
+        """
+        return self.connection.dependencies.children(self.full_table_name, primary)
 
     def children(self, primary=None, as_objects=False, foreign_key_info=False):
         """
@@ -747,7 +749,7 @@ class Table(QueryExpression):
         if reload or not self.connection.dependencies:
             self.connection.dependencies.load()
 
-        children = self.children()
+        children = self.children_dict()
 
         for child_name, child in children.items():
             if child['aliased']:
