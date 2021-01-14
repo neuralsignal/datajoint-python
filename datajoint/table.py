@@ -495,67 +495,83 @@ class Table(QueryExpression):
 
     def _delete_cascade(self, return_message=False):
         """service function to perform cascading deletes recursively."""
-        max_attempts = 50
         delete_count = 0
         message = ""
+
+        # if empty nothing to delete
+        if not self:
+            if return_message:
+                return delete_count, message
+            else:
+                return delete_count
+
+        try:
+            delete_count += self.delete_quick(get_count=True)
+        except IntegrityError:
+            for child, fk_info in self.children(as_objects=True, foreign_key_info=True):
+                # if aliased keys rename child table
+                if fk_info['aliased']:
+                    child &= self.proj(**fk_info['attr_map'])
+                # restriction attributes are a subset of child primary keys
+                elif set(self.restriction_attributes) <= set(child.primary_key):
+                    child._restriction = self._restriction
+                else:
+                    child &= self.proj()
+                if return_message:
+                    delete_count_, message_ = child._delete_cascade(return_message)
+                    delete_count += delete_count_
+                    message += message_
+                else:
+                    delete_count += child._delete_cascade(return_message)
+            delete_count += self.delete_quick(get_count=True)
+
+        message_ = "Deleting {count} rows from {table}\n".format(
+            count=delete_count, table=self.full_table_name
+        )
+
+        if return_message:
+            message += message_
+            return delete_count, message
+        else:
+            print(message)
+            return delete_count
+
+    # buggy cascade delete
+    def _delete_cascade__(self):
+        """service function to perform cascading deletes recursively."""
+        max_attempts = 50
+        delete_count = 0
         for _ in range(max_attempts):
             try:
                 delete_count += self.delete_quick(get_count=True)
             except IntegrityError as error:
-                # match = foregn_key_error_regexp.match(error.args[0])
-                # assert match is not None, "foreign key parsing error"
+                match = foregn_key_error_regexp.match(error.args[0])
+                assert match is not None, "foreign key parsing error"
                 # restrict child by self if
                 # 1. if self's restriction attributes are not in child's primary key
                 # 2. if child renames any attributes
                 # otherwise restrict child by self's restriction.
-                # child = match.group('child')
-                # if "`.`" not in child:  # if schema name is not included, take it from self
-                #     child = self.full_table_name.split("`.")[0] + child
-                # child = FreeTable(self.connection, child)
-                # if set(self.restriction_attributes) <= set(child.primary_key) and \
-                #         match.group('fk_attrs') == match.group('pk_attrs'):
-                #     child._restriction = self._restriction
-                # elif match.group('fk_attrs') != match.group('pk_attrs'):
-                #     fk_attrs = [k.strip('`') for k in match.group('fk_attrs').split(',')]
-                #     pk_attrs = [k.strip('`') for k in match.group('pk_attrs').split(',')]
-                #     child &= self.proj(**dict(zip(fk_attrs, pk_attrs)))
-                # else:
-                #     child &= self.proj()
-                # Bug when message shorter than primary key names
-                # This would be a quickfix
-                # (inefficient since it goes through every child table)
-                for child, fk_info in self.children(as_objects=True, foreign_key_info=True):
-                    # if aliased keys rename child table
-                    if fk_info['aliased']:
-                        child &= self.proj(**fk_info['attr_map'])
-                    # restriction attributes are a subset of child primary keys
-                    elif set(self.restriction_attributes) <= set(child.primary_key):
-                        child._restriction = self._restriction
-                    else:
-                        child &= self.proj()
-                    if return_message:
-                        delete_count_, message_ = child._delete_cascade(
-                            return_message
-                        )
-                        delete_count += delete_count_
-                        message += message_
-                    else:
-                        delete_count += child._delete_cascade(return_message)
-            else:
-                message_ = "Deleting {count} rows from {table}\n".format(
-                    count=delete_count, table=self.full_table_name
-                )
-                if return_message:
-                    message += message_
+                child = match.group('child')
+                if "`.`" not in child:  # if schema name is not included, take it from self
+                    child = self.full_table_name.split("`.")[0] + child
+                child = FreeTable(self.connection, child)
+                if set(self.restriction_attributes) <= set(child.primary_key) and \
+                        match.group('fk_attrs') == match.group('pk_attrs'):
+                    child._restriction = self._restriction
+                elif match.group('fk_attrs') != match.group('pk_attrs'):
+                    fk_attrs = [k.strip('`') for k in match.group('fk_attrs').split(',')]
+                    pk_attrs = [k.strip('`') for k in match.group('pk_attrs').split(',')]
+                    child &= self.proj(**dict(zip(fk_attrs, pk_attrs)))
                 else:
-                    print(message_)
+                    child &= self.proj()
+                delete_count += child._delete_cascade()
+            else:
+                print("Deleting {count} rows from {table}".format(
+                    count=delete_count, table=self.full_table_name))
                 break
         else:
             raise DataJointError('Exceeded maximum number of delete attempts.')
-        if return_message:
-            return delete_count, message
-        else:
-            return delete_count
+        return delete_count
 
     def delete(self, transaction=True, safemode=None):
         """
