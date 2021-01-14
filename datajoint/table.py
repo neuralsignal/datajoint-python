@@ -533,7 +533,7 @@ class Table(QueryExpression):
             message += message_
             return delete_count, message
         else:
-            print(message)
+            print(message_)
             return delete_count
 
     # buggy cascade delete
