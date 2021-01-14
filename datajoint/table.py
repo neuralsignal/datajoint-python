@@ -495,18 +495,18 @@ class Table(QueryExpression):
 
     def _delete_cascade(self, return_message=False):
         """service function to perform cascading deletes recursively."""
-        delete_count = 0
+        total_count = 0
         message = ""
 
         # if empty nothing to delete
         if not self:
             if return_message:
-                return delete_count, message
+                return total_count, message
             else:
-                return delete_count
+                return total_count
 
         try:
-            delete_count += self.delete_quick(get_count=True)
+            delete_count = self.delete_quick(get_count=True)
         except IntegrityError:
             for child, fk_info in self.children(as_objects=True, foreign_key_info=True):
                 # if aliased keys rename child table
@@ -518,23 +518,24 @@ class Table(QueryExpression):
                 else:
                     child &= self.proj()
                 if return_message:
-                    delete_count_, message_ = child._delete_cascade(return_message)
-                    delete_count += delete_count_
+                    total_count_, message_ = child._delete_cascade(return_message)
+                    total_count += total_count_
                     message += message_
                 else:
-                    delete_count += child._delete_cascade(return_message)
-            delete_count += self.delete_quick(get_count=True)
+                    total_count += child._delete_cascade(return_message)
+            delete_count = self.delete_quick(get_count=True)
 
+        total_count += delete_count
         message_ = "Deleting {count} rows from {table}\n".format(
             count=delete_count, table=self.full_table_name
         )
 
         if return_message:
             message += message_
-            return delete_count, message
+            return total_count, message
         else:
             print(message_)
-            return delete_count
+            return total_count
 
     # buggy cascade delete
     def _delete_cascade__(self):
