@@ -524,9 +524,7 @@ class Table(QueryExpression):
                 # Bug when message shorter than primary key names
                 # This would be a quickfix
                 # (inefficient since it goes through every child table)
-                for child, fk_info in self.children(
-                    self, as_objects=True, foreign_key_info=True
-                ):
+                for child, fk_info in self.children(as_objects=True, foreign_key_info=True):
                     # if aliased keys rename child table
                     if fk_info['aliased']:
                         child &= self.proj(**fk_info['attr_map'])
