@@ -13,6 +13,10 @@ Installation of this fork can be down via the source code:
 ```
 pip install git+https://github.com/gucky92/datajoint-python.git
 ```
+Or via pip (starting from 0.13.dev2):
+```
+pip install datajoint-gucky
+```
 
 ## Dynamic Autopopulation
 
