@@ -20,7 +20,7 @@ with open(path.join(here, 'requirements.txt')) as f:
     requirements = f.read().split()
 
 setup(
-    name='datajoint',
+    name='datajoint-gucky',
     version=__version__,
     description="A relational data pipeline framework.",
     long_description=long_description,
