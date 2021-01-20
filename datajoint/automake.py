@@ -8,7 +8,6 @@ import warnings
 import sys
 import numpy as np
 
-from .table import FreeTable
 from .autopopulate import AutoPopulate
 from .expression import AndList
 from .utils import ClassProperty
@@ -75,13 +74,10 @@ class AutoMake(AutoPopulate):
             **kwargs
         )
 
-    def make(self, key):
-        """automated make method
+    def get_entry(self, key):
         """
-
-        if self._verbose:
-            print("Start autopopulation for key `{0}`".format(key))
-
+        Method used within make to get entry/tuple data
+        """
         table = self._settings['fetch_tables'] & key
 
         if 'fetch1' in self._settings['fetch_method']:
@@ -105,6 +101,12 @@ class AutoMake(AutoPopulate):
                 if column in self._settings['parse_unique']:
                     # TODO check if unique?
                     entry[column] = value[0]
+        return entry
+
+    def prepare_make(self, entry):
+        """
+        Method used within make to prepare for computation
+        """
 
         args, kwargs = self._create_kwargs(
             entry,
@@ -115,7 +117,29 @@ class AutoMake(AutoPopulate):
         )
 
         func = self._settings['func']
+
+        return entry, func, args, kwargs
+
+    def make(self, key):
+        """automated make method
+        """
+
+        if self._verbose:
+            print("Start autopopulation for key `{0}`".format(key))
+
+        entry = self.get_entry(key)
+        func, args, kwargs = self.prepare_make(entry)
         output = func(*args, **kwargs)
+        self.insert_output(key, entry, output)
+
+        # verbosity
+        if self._verbose:
+            print('Populated entry: {key}'.format(key=key))
+
+    def insert_output(self, key, entry, output):
+        """
+        Method used within make to insert output into table
+        """
 
         if self._settings['assign_output'] is None:
             output = self.make_compatible(output)
@@ -161,10 +185,6 @@ class AutoMake(AutoPopulate):
             self.insert1p(output, raise_part_missing=False)
         else:
             self.insert1(output)
-
-        # verbosity
-        if self._verbose:
-            print('Populated entry: {key}'.format(key=key))
 
     @staticmethod
     def _create_kwargs(
