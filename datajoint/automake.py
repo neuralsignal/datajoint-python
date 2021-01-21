@@ -118,7 +118,7 @@ class AutoMake(AutoPopulate):
 
         func = self._settings['func']
 
-        return entry, func, args, kwargs
+        return func, args, kwargs
 
     def make(self, key):
         """automated make method
