@@ -48,7 +48,7 @@ class AutoPopulate:
         def _rename_attributes(table, props):
             return (table.proj(
                 **{attr: ref for attr, ref in props['attr_map'].items() if attr != ref})
-                if props['aliased'] else table)
+                if props['aliased'] else table.proj())
 
         if self._key_source is None:
             parents = self.target.parents(primary=True, as_objects=True, foreign_key_info=True)
