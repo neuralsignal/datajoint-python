@@ -7,7 +7,6 @@ import inspect
 from tqdm import tqdm
 from .expression import QueryExpression, AndList
 from .errors import DataJointError, LostConnectionError
-from .table import FreeTable
 import signal
 import multiprocessing as mp
 
@@ -46,25 +45,19 @@ class AutoPopulate:
                 The default value is the join of the parent relations.
                 Users may override to change the granularity or the scope of populate() calls.
         """
-        def parent_gen(self):
-            if self.target.full_table_name not in self.connection.dependencies:
-                self.connection.dependencies.load()
-            for parent_name, fk_props in self.target.parents(primary=True).items():
-                if not parent_name.isdigit():  # simple foreign key
-                    yield FreeTable(self.connection, parent_name).proj()
-                else:
-                    grandparent = list(self.connection.dependencies.in_edges(parent_name))[0][0]
-                    yield FreeTable(self.connection, grandparent).proj(**{
-                        attr: ref for attr, ref in fk_props['attr_map'].items() if ref != attr})
+        def _rename_attributes(table, props):
+            return (table.proj(
+                **{attr: ref for attr, ref in props['attr_map'].items() if attr != ref})
+                if props['aliased'] else table.proj())
 
         if self._key_source is None:
-            parents = parent_gen(self)
-            try:
-                self._key_source = next(parents)
-            except StopIteration:
-                raise DataJointError('A relation must have primary dependencies for auto-populate to work') from None
-            for q in parents:
-                self._key_source *= q
+            parents = self.target.parents(primary=True, as_objects=True, foreign_key_info=True)
+            if not parents:
+                raise DataJointError(
+                    'A relation must have primary dependencies for auto-populate to work') from None
+            self._key_source = _rename_attributes(*parents[0])
+            for q in parents[1:]:
+                self._key_source *= _rename_attributes(*q)
         return self._key_source
 
     def make(self, key):
@@ -78,8 +71,8 @@ class AutoPopulate:
     @property
     def target(self):
         """
-        relation to be populated.
-        Typically, AutoPopulate are mixed into a Relation object and the target is self.
+        :return: table to be populated.
+        In the typical case, dj.AutoPopulate is mixed into a dj.Table class by inheritance and the target is self.
         """
         return self
 
@@ -87,6 +80,7 @@ class AutoPopulate:
         """
         :param key:  they key returned for the job from the key source
         :return: the dict to use to generate the job reservation hash
+        This method allows subclasses to control the job reservation granularity.
         """
         return key
 
@@ -184,7 +178,7 @@ class AutoPopulate:
             # each worker process calls initializer(*initargs) when it starts
             with mp.Pool(nproc, initializer, (self,)) as pool:
                 if display_progress:
-                    with tqdm(total=nkeys) as pbar:
+                    with tqdm(total=nkeys, desc=self.name) as pbar:
                         for error in pool.imap(call_make_key, keys, chunksize=1):
                             if error is not None:
                                 error_list.append(error)
@@ -195,13 +189,12 @@ class AutoPopulate:
                             error_list.append(error)
             self.connection.connect() # reconnect parent process to MySQL server
         else: # use single process
-            for key in tqdm(keys) if display_progress else keys:
+            for key in (tqdm(keys, desc=self.name) if display_progress else keys):
                 error = self.make_key(key)
                 if error is not None:
                     error_list.append(error)
 
         del self._make_key_kwargs # clean up
-
         # restore original signal handler:
         if reserve_jobs:
             signal.signal(signal.SIGTERM, old_handler)
@@ -263,7 +256,7 @@ class AutoPopulate:
         total = len(todo)
         remaining = len(todo - self.target)
         if display:
-            print('%-20s' % self.__class__.__name__,
+            print('%-20s' % self.name,
                   'Completed %d of %d (%2.1f%%)   %s' % (
                       total - remaining, total, 100 - 100 * remaining / (total+1e-12),
                       datetime.datetime.strftime(datetime.datetime.now(), '%Y-%m-%d %H:%M:%S')), flush=True)

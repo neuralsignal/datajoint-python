@@ -8,7 +8,6 @@ import warnings
 import sys
 import numpy as np
 
-from .table import FreeTable
 from .autopopulate import AutoPopulate
 from .expression import AndList
 from .utils import ClassProperty
@@ -75,13 +74,10 @@ class AutoMake(AutoPopulate):
             **kwargs
         )
 
-    def make(self, key):
-        """automated make method
+    def get_entry(self, key):
         """
-
-        if self._verbose:
-            print(f"Start autopopulation for key `{key}`")
-
+        Method used within make to get entry/tuple data
+        """
         table = self._settings['fetch_tables'] & key
 
         if 'fetch1' in self._settings['fetch_method']:
@@ -93,7 +89,7 @@ class AutoMake(AutoPopulate):
         else:
             if len(table) == 0:
                 raise DataJointError(
-                    'empty joined table for key {}'.format(key)
+                    'empty joined table for key {0}'.format(key)
                 )
 
             entry = getattr(
@@ -105,6 +101,12 @@ class AutoMake(AutoPopulate):
                 if column in self._settings['parse_unique']:
                     # TODO check if unique?
                     entry[column] = value[0]
+        return entry
+
+    def prepare_make(self, entry):
+        """
+        Method used within make to prepare for computation
+        """
 
         args, kwargs = self._create_kwargs(
             entry,
@@ -115,7 +117,29 @@ class AutoMake(AutoPopulate):
         )
 
         func = self._settings['func']
+
+        return func, args, kwargs
+
+    def make(self, key):
+        """automated make method
+        """
+
+        if self._verbose:
+            print("Start autopopulation for key `{0}`".format(key))
+
+        entry = self.get_entry(key)
+        func, args, kwargs = self.prepare_make(entry)
         output = func(*args, **kwargs)
+        self.insert_output(key, entry, output)
+
+        # verbosity
+        if self._verbose:
+            print('Populated entry: {key}'.format(key=key))
+
+    def insert_output(self, key, entry, output):
+        """
+        Method used within make to insert output into table
+        """
 
         if self._settings['assign_output'] is None:
             output = self.make_compatible(output)
@@ -123,7 +147,7 @@ class AutoMake(AutoPopulate):
             output = {self._settings['assign_output']: output}
 
         if output is None:
-            warnings.warn('output of function is None for key {}'.format(key))
+            warnings.warn('output of function is None for key {0}'.format(key))
             output = {}
 
         # Test if dict or dataframe, convert to dataframe if necessary
@@ -162,10 +186,6 @@ class AutoMake(AutoPopulate):
         else:
             self.insert1(output)
 
-        # verbosity
-        if self._verbose:
-            print('Populated entry: {key}'.format(key=key))
-
     @staticmethod
     def _create_kwargs(
         entry, entry_settings, global_settings,
@@ -191,7 +211,7 @@ class AutoMake(AutoPopulate):
                 raise DataJointError(
                     "argument in entry settings must be "
                     "str, tuple, or list, but is "
-                    f"{type(arg)} for {kw}"
+                    "{0} for {1}".format(type(arg), kw)
                 )
 
         if settings_args is not None:
@@ -277,20 +297,10 @@ class AutoMake(AutoPopulate):
         if self.target.full_table_name not in self.connection.dependencies:
             self.connection.dependencies.load()
 
-        for parent_name, fk_props in self.target.parents(primary=True).items():
+        for freetable in self.target.parents(primary=True, as_objects=True):
 
-            if parent_name == self.settings_table.full_table_name:
+            if freetable.full_table_name == self.settings_table.full_table_name:
                 continue
-
-            elif not parent_name.isdigit():  # simple foreign key
-                freetable = FreeTable(self.connection, parent_name)
-
-            else:
-                grandparent = list(
-                    self.connection.dependencies.in_edges(parent_name)
-                )[0][0]
-                freetable = FreeTable(self.connection, grandparent)
-
             proj_columns = list(set(freetable.heading.names) & set(columns))
             proj_table = freetable.proj(*proj_columns)
             if restrictions is not None:
