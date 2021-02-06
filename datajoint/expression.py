@@ -243,8 +243,12 @@ class QueryExpression:
             raise DataJointError("The argument of join must be a QueryExpression")
         other_clash = set(other.heading.names) | set(
             (other.heading[n].attribute_expression.strip('`') for n in other.heading.new_attributes))
+        if hasattr(other, "table_attributes"):
+            other_clash |= set(other.table_attributes)
         self_clash = set(self.heading.names) | set(
             (self.heading[n].attribute_expression for n in self.heading.new_attributes))
+        if hasattr(self, "table_attributes"):
+            self_clash |= set(self.table_attributes)
         need_subquery1 = isinstance(self, Union) or any(
             n for n in self.heading.new_attributes if (
                     n in other_clash or self.heading[n].attribute_expression.strip('`') in other_clash))
@@ -252,9 +256,6 @@ class QueryExpression:
                           isinstance(self, Union) or any(
             n for n in other.heading.new_attributes if (
                     n in self_clash or other.heading[n].attribute_expression.strip('`') in other_clash)))
-        # Quick fix (TODO)
-        need_subquery1 = True
-        need_subquery2 = True
         if need_subquery1:
             self = self.make_subquery()
         if need_subquery2:

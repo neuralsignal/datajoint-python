@@ -48,6 +48,7 @@ class Table(QueryExpression):
     database = None
     declaration_context = None
     _part_tables = None
+    _table_attributes = None
 
     @property
     def table_name(self):
@@ -56,6 +57,14 @@ class Table(QueryExpression):
     @property
     def definition(self):
         raise NotImplementedError('Subclasses of Table must implement the `definition` property')
+
+    @property
+    def table_attributes(self):
+        if self._table_attributes is None:
+            self._table_attributes = FreeTable(
+                self.connection, self.full_table_name
+            ).heading.names
+        return self._table_attributes
 
     def declare(self, context=None):
         """
