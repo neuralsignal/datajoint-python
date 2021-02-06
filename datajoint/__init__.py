@@ -25,7 +25,7 @@ __all__ = ['__author__', '__version__',
            'Not', 'AndList', 'U', 'Diagram', 'Di', 'ERD',
            'set_password', 'kill',
            'MatCell', 'MatStruct', 'AttributeAdapter',
-           'errors', 'DataJointError', 'key']
+           'errors', 'DataJointError', 'key', 'key_hash']
 
 from .version import __version__
 from .settings import config
@@ -42,6 +42,7 @@ from .diagram import Diagram
 from .admin import set_password, kill
 from .blob import MatCell, MatStruct
 from .fetch import key
+from .hash import key_hash
 from .attribute_adapter import AttributeAdapter
 from . import errors
 from .errors import DataJointError
