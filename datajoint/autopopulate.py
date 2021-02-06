@@ -195,7 +195,6 @@ class AutoPopulate:
                     error_list.append(error)
 
         del self._make_key_kwargs # clean up
-
         # restore original signal handler:
         if reserve_jobs:
             signal.signal(signal.SIGTERM, old_handler)

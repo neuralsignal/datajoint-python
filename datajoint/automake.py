@@ -301,7 +301,6 @@ class AutoMake(AutoPopulate):
 
             if freetable.full_table_name == self.settings_table.full_table_name:
                 continue
-
             proj_columns = list(set(freetable.heading.names) & set(columns))
             proj_table = freetable.proj(*proj_columns)
             if restrictions is not None:
