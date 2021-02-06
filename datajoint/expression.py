@@ -241,21 +241,62 @@ class QueryExpression:
             other = other()  # instantiate
         if not isinstance(other, QueryExpression):
             raise DataJointError("The argument of join must be a QueryExpression")
-        other_clash = set(other.heading.names) | set(
-            (other.heading[n].attribute_expression.strip('`') for n in other.heading.new_attributes))
-        if hasattr(other, "table_attributes"):
-            other_clash |= set(other.table_attributes)
-        self_clash = set(self.heading.names) | set(
-            (self.heading[n].attribute_expression for n in self.heading.new_attributes))
+        # various attribute categories
+        self_heading = set(self.heading.names)
+        other_heading = set(other.heading.names)
         if hasattr(self, "table_attributes"):
-            self_clash |= set(self.table_attributes)
-        need_subquery1 = isinstance(self, Union) or any(
-            n for n in self.heading.new_attributes if (
-                    n in other_clash or self.heading[n].attribute_expression.strip('`') in other_clash))
-        need_subquery2 = (len(other.support) > 1 or
-                          isinstance(self, Union) or any(
-            n for n in other.heading.new_attributes if (
-                    n in self_clash or other.heading[n].attribute_expression.strip('`') in other_clash)))
+            self_table_attrs = set(self.table_attributes)
+        else:
+            self_table_attrs = set()
+        if hasattr(other, "table_attributes"):
+            other_table_attrs = set(other.table_attributes)
+        else:
+            self_table_attrs = set()
+        self_new = set(self.heading.new_attributes)
+        other_new = set(other.heading.new_attributes)
+        self_orig = set(
+            self.heading[n].attribute_expression.strip('`')
+            for n in self.heading.new_attributes
+        )
+        other_orig = set(
+            other.heading[n].attribute_expression.strip('`')
+            for n in other.heading.new_attributes
+        )
+        self_clash = self_heading | self_table_attrs | self_orig
+        other_clash = other_heading | other_table_attrs | other_orig
+        self_primary = set(self.primary_key)
+        other_primary = set(other.primary_key)
+
+        # secondary attributes clash with each other
+        need_subquery = bool(
+            (self_clash - self_primary)
+            & (other_clash - other_primary)
+        )
+
+        need_subquery1 = (
+            isinstance(self, Union)
+            # renaming clashed with anything in other
+            or bool((self_new | self_orig) & other_clash)
+            or need_subquery
+        )
+        need_subquery2 = (
+            isinstance(other, Union)
+            # renaming clashed with anything in self
+            or bool((other_new | other_orig) & self_clash)
+            or need_subquery
+        )
+        # previous implementation
+        # other_clash = set(other.heading.names) | set(
+        #     (other.heading[n].attribute_expression.strip('`') for n in other.heading.new_attributes))
+        # self_clash = set(self.heading.names) | set(
+        #     (self.heading[n].attribute_expression for n in self.heading.new_attributes))
+        # need_subquery1 = isinstance(self, Union) or any(
+        #     n for n in self.heading.new_attributes if (
+        #             n in other_clash or self.heading[n].attribute_expression.strip('`') in other_clash))
+        # need_subquery2 = (len(other.support) > 1 or
+        #                   isinstance(self, Union) or any(
+        #     n for n in other.heading.new_attributes if (
+        #             n in self_clash or other.heading[n].attribute_expression.strip('`') in other_clash)))
         if need_subquery1:
             self = self.make_subquery()
         if need_subquery2:
