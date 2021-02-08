@@ -27,9 +27,6 @@ from .errors import DataJointError
 from .settings import config, prefix_to_role
 
 
-if sys.version_info[1] < 6:
-    dict = collections.OrderedDict
-
 Sequence = (collections.MutableSequence, tuple, set)
 # which keys to keep in conda list return
 CONDA_KEEP = ['name', 'version']

@@ -12,7 +12,6 @@ import uuid
 import pickle
 import numpy as np
 from .errors import DataJointError
-from .utils import OrderedDict
 from .settings import config
 
 try:
@@ -22,7 +21,7 @@ except ImportError:
     pass
 
 
-mxClassID = OrderedDict((
+mxClassID = dict((
     # see http://www.mathworks.com/help/techdoc/apiref/mxclassid.html
     ('mxUNKNOWN_CLASS', None),
     ('mxCELL_CLASS', None),
@@ -372,8 +371,8 @@ class Blob:
             len_u64(it) + it for it in (self.pack_blob(i) for i in t))
 
     def read_dict(self):
-        return OrderedDict((self.read_blob(self.read_value()), self.read_blob(self.read_value()))
-                           for _ in range(self.read_value()))
+        return dict((self.read_blob(self.read_value()), self.read_blob(self.read_value()))
+                    for _ in range(self.read_value()))
 
     def pack_dict(self, d):
         return b"\4" + len_u64(d) + b"".join(
