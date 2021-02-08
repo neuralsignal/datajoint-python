@@ -5,7 +5,6 @@ import re
 import pandas
 import collections
 import warnings
-import sys
 import numpy as np
 
 from .autopopulate import AutoPopulate
@@ -13,9 +12,6 @@ from .expression import AndList
 from .utils import ClassProperty
 from .errors import DataJointError
 from .settings_table import Settingstable
-
-if sys.version_info[1] < 6:
-    dict = collections.OrderedDict
 
 Sequence = (collections.MutableSequence, tuple, set)
 

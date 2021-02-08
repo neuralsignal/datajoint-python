@@ -485,11 +485,14 @@ class Table(QueryExpression):
                     duplicate=(' ON DUPLICATE KEY UPDATE `{pk}`=`{pk}`'.format(pk=self.primary_key[0])
                                if skip_duplicates else ''))
                 self.connection.query(query, args=list(
-                    itertools.chain.from_iterable((v for v in r['values'] if v is not None) for r in rows)))
+                    itertools.chain.from_iterable(
+                        (v for v in r['values'] if v is not None) for r in rows)))
             except UnknownAttributeError as err:
-                raise err.suggest('To ignore extra fields in insert, set ignore_extra_fields=True')
+                raise err.suggest(
+                    'To ignore extra fields in insert, set ignore_extra_fields=True')
             except DuplicateError as err:
-                raise err.suggest('To ignore duplicate entries in insert, set skip_duplicates=True')
+                raise err.suggest(
+                    'To ignore duplicate entries in insert, set skip_duplicates=True')
 
     def delete_quick(self, get_count=False):
         """

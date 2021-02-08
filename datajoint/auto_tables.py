@@ -3,13 +3,9 @@ Contains AutoComputed and AutoImported tables
 """
 
 import collections
-import sys
 
 from .user_tables import UserTable, _base_regexp
 from .automake import AutoMake
-
-if sys.version_info[1] < 6:
-    dict = collections.OrderedDict
 
 Sequence = (collections.MutableSequence, tuple, set)
 
