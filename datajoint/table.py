@@ -870,9 +870,9 @@ class Table(QueryExpression):
         set_statement = ', '.join(set_statement)
 
         command = "UPDATE {full_table_name} SET {set_statement} {where_clause}".format(
-            full_table_name=self.from_clause,
+            full_table_name=self.from_clause(),
             set_statement=set_statement,
-            where_clause=self.where_clause)
+            where_clause=self.where_clause())
         self.connection.query(
             command,
             args=[
