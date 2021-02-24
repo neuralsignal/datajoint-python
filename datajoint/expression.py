@@ -251,7 +251,7 @@ class QueryExpression:
         if hasattr(other, "table_attributes"):
             other_table_attrs = set(other.table_attributes)
         else:
-            self_table_attrs = set()
+            other_table_attrs = set()
         self_new = set(self.heading.new_attributes)
         other_new = set(other.heading.new_attributes)
         self_orig = set(
