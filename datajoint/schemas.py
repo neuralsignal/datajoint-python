@@ -165,7 +165,11 @@ class Schema:
             )
 
         if issubclass(cls, (AutoComputed, AutoImported)):
-            context[cls.settings_table.name] = self(
+            settings_schema = (
+                self if cls.settings_table._assigned_schema is None
+                else cls.settings_table._assigned_schema
+            )
+            context[cls.settings_table._save_name] = settings_schema(
                 cls.settings_table, context=context
             )
             cls.set_true_definition()

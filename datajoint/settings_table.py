@@ -34,6 +34,45 @@ CONDA_KEEP = ['name', 'version']
 PYTHON_VERSION = (sys.version_info[0], sys.version_info[1])
 
 
+def get_settings_table(child_cls, name=None, assigned_schema=None):
+    """
+    dynamically create a settings table.
+    """
+    if name is None:
+        name = child_cls.name + 'Settings'
+        _save_name = name
+        settings_prefix = child_cls.table_name.strip('_#')
+    else:
+        settings_prefix = from_camel_case(name)
+        _save_name = child_cls.name + name
+
+    class Settings(Settingstable):
+
+        @property
+        def definition(self):
+            return super().definition.format(
+                table_name=settings_prefix
+            )
+
+        @ClassProperty
+        def name(cls):
+            return name
+
+        @ClassProperty
+        def _save_name(cls):
+            return _save_name
+
+        @ClassProperty
+        def child_table(cls):
+            return child_cls
+
+        @ClassProperty
+        def _assigned_schema(cls):
+            return assigned_schema
+
+    return Settings
+
+
 class Settingstable(UserTable):
     """settings table class
     """
@@ -61,6 +100,14 @@ class Settingstable(UserTable):
     @ClassProperty
     def child_table(cls):
         raise NotImplementedError('child table attribute for settings table.')
+
+    @ClassProperty
+    def _save_name(cls):
+        raise NotImplementedError('save name for settings table.')
+
+    @ClassProperty
+    def _assigned_schema(cls):
+        return None
 
     @property
     def settings_name(self):

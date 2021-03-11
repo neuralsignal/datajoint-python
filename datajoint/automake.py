@@ -11,7 +11,7 @@ from .autopopulate import AutoPopulate
 from .expression import AndList
 from .utils import ClassProperty
 from .errors import DataJointError
-from .settings_table import Settingstable
+from .settings_table import get_settings_table
 
 Sequence = (collections.MutableSequence, tuple, set)
 
@@ -22,6 +22,8 @@ class AutoMake(AutoPopulate):
     It adds a settings table upstream and make method.
     """
 
+    _settings_table_name = None
+    _settings_schema = None
     _settings_table = None
     _settings = None
     _verbose = False
@@ -229,27 +231,11 @@ class AutoMake(AutoPopulate):
 
         if cls._settings_table is None:
             # dynamically assign settings table
-
-            settings_table_name = cls.name + 'Settings'
-            child_table = cls
-
-            class Settings(Settingstable):
-
-                @property
-                def definition(self):
-                    return super().definition.format(
-                        table_name=cls.table_name.strip('_#')
-                    )
-
-                @ClassProperty
-                def name(cls):
-                    return settings_table_name
-
-                @ClassProperty
-                def child_table(cls):
-                    return child_table
-
-            cls._settings_table = Settings
+            cls._settings_table = get_settings_table(
+                cls,
+                name=cls._settings_table_name,
+                assigned_schema=cls._settings_schema
+            )
 
         return cls._settings_table
 
@@ -258,7 +244,7 @@ class AutoMake(AutoPopulate):
         """add settings table attribute if not in definition
         """
 
-        settings_table_attribute = '-> {}'.format(cls.settings_table.name)
+        settings_table_attribute = '-> {}'.format(cls.settings_table._save_name)
 
         if isinstance(cls.definition, property):
             pass
