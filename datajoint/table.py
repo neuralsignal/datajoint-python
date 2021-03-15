@@ -594,6 +594,13 @@ class Table(QueryExpression):
         """
         safemode = config['safemode'] if safemode is None else safemode
 
+        if config.get('delete_permission', None) is not None:
+            delete_permission = config['delete_permission'](self)
+            if not delete_permission:
+                raise DataJointError(
+                    "Cannot delete due to permission restrictions on entries."
+                )
+
         # Start transaction
         if transaction:
             if not self.connection.in_transaction:

@@ -54,7 +54,8 @@ default = dict({
     'enable_automakers': True,
     'automaker_warnings': True,
     'tmp_folder': None,
-    'backup_context': None
+    'backup_context': None,
+    'delete_permission': None
 })
 
 logger = logging.getLogger(__name__)
