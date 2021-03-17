@@ -47,7 +47,6 @@ class Table(QueryExpression):
     # These properties must be set by the schema decorator (schemas.py) at class level or by FreeTable at instance level
     database = None
     declaration_context = None
-    _part_tables = None
     _table_attributes = None
 
     @property
@@ -153,51 +152,27 @@ class Table(QueryExpression):
         return nodes
 
     @property
-    def part_tables(self):
-        """a tuple of all part tables
-        :return: tuple of part tables of self
-        """
-
-        if self._part_tables is None:
-
-            # TODO general load checking
-            self.connection.dependencies.load()
-
-            part_tables = []
-            self_table_name = self.full_table_name.replace('`', '')
-
-            for child_table_name in self.children():
-
-                child_table_name = child_table_name.replace('`', '')
-
-                if child_table_name.startswith(self_table_name + '__'):
-
-                    part_table_name = child_table_name.replace(
-                        self_table_name + '__', ''
-                    )
-
-                    try:
-                        part_table = getattr(
-                            self,
-                            to_camel_case(part_table_name)
-                        )
-                    except AttributeError:
-                        part_table = FreeTable(
-                            self.connection, child_table_name
-                        )
-
-                    part_tables.append(part_table)
-
-            self._part_tables = tuple(part_tables)
-
-        return self._part_tables
+    def has_parts(self):
+        """True if self has part tables."""
+        return bool(self.parts())
 
     @property
-    def has_part_tables(self):
-        """True if self has part tables.
-        """
+    def has_children(self):
+        """True if self has children."""
+        return bool(self.children())
 
-        return bool(self.part_tables)
+    @property
+    def has_parents(self):
+        """True if self has parents."""
+        return bool(self.parents())
+
+    @property
+    def with_parts(self):
+        """Joined master with part tables. Requires that no dependent attributes match."""
+        table = self
+        for part_table in self.parts(as_objects=True):
+            table = table * part_table
+        return table
 
     def children(self, primary=None, as_objects=False, foreign_key_info=False):
         """
@@ -296,7 +271,7 @@ class Table(QueryExpression):
             # convert master input to dictionary
             new_row = new_row.iloc[0].dropna().to_dict()
 
-            for part_table in self.part_tables:
+            for part_table in self.parts(as_objects=True):
                 part_columns = set(part_table.heading) & set(row)
                 if not part_columns:
                     new_row[part_table.name] = None
@@ -322,7 +297,7 @@ class Table(QueryExpression):
             self.insert1(master_input, **kwargs)
 
             # insert into part tables
-            for part_table in self.part_tables:
+            for part_table in self.parts(as_objects=True):
                 # if part_table exists insert otherwise skip part_table
                 part_table_name = (
                     to_camel_case(part_table.table_name)

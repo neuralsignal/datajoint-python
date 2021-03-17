@@ -153,14 +153,14 @@ class AutoMake(AutoPopulate):
             output = pandas.DataFrame(output)
 
         if (
-            self.has_part_tables
+            self.has_parts
             and not isinstance(output, (pandas.DataFrame, dict))
         ):
             raise DataJointError(
                 "output must be dataframe or dict for table with part tables."
             )
 
-        elif not self.has_part_tables and not isinstance(output, dict):
+        elif not self.has_parts and not isinstance(output, dict):
             raise DataJointError(
                 "ouput must be dict for table without part tables."
             )
@@ -179,7 +179,7 @@ class AutoMake(AutoPopulate):
                 output[column] = entry[column][0]
 
         # insert into table and part_table
-        if self.has_part_tables:
+        if self.has_parts:
             self.insert1p(output, raise_part_missing=False)
         else:
             self.insert1(output)
