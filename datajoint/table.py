@@ -297,11 +297,15 @@ class Table(QueryExpression):
             # insert into self
             self.insert1(master_input, **kwargs)
 
+            # other indices
+            other = set(row.index) - index
+            part_table_names = []
+            parts = self.parts(as_objects=True)
             # insert into part tables
-            for part_table in self.parts(as_objects=True):
+            for part_table in parts:
                 # if part_table exists insert otherwise skip part_table
                 part_table_name = (
-                    to_camel_case(part_table.table_name)
+                    to_camel_case(part_table.table_name.split('__')[-1])
                     if not hasattr(part_table, 'name')
                     else part_table.name
                 )
@@ -313,6 +317,17 @@ class Table(QueryExpression):
                             )
                         )
                     continue
+                part_table_names.append(part_table_name)
+
+            # assert subset
+            if not other.issubset(set(part_table_names)):
+                raise DataJointError(
+                    "Some keys could not be assigned for `inset1p`: "
+                    "{0}.".format(other)
+                )
+
+            # insert into part tables
+            for part_table_name, part_table in zip(part_table_names, parts):
                 # try to convert to pandas Dataframe
                 part_rows = row[part_table_name]
                 if part_rows is None:
