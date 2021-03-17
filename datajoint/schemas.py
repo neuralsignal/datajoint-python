@@ -146,6 +146,11 @@ class Schema:
         :param context: supplied when called from spawn_missing_classes
         """
         context = context or self.context or inspect.currentframe().f_back.f_locals
+
+        # update backup context with context
+        backup = config['backup_context']
+        context = {**backup, **context}
+
         if issubclass(cls, Part):
             raise DataJointError('The schema decorator should not be applied to Part relations')
         # automaker specific
