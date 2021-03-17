@@ -214,6 +214,7 @@ class Table(QueryExpression):
         return part tables either as entries in a dict with foreign key informaiton or a list of objects
         :param as_objects: if False (default), the output is a dict describing the foreign keys. If True, return table objects.
         """
+        self.connection.dependencies.load(force=False)
         nodes = [node for node in self.connection.dependencies.nodes
                  if not node.isdigit() and node.startswith(self.full_table_name[:-1] + '__')]
         return [FreeTable(self.connection, c) for c in nodes] if as_objects else nodes
