@@ -37,7 +37,7 @@ class QueryExpression:
     _restriction = None
     _restriction_attributes = None
     _left = []  # True for left joins, False for inner joins
-    _join_attributes = []
+    _original_heading = None  # heading before projections
 
     # subclasses or instantiators must provide values
     _connection = None
@@ -60,6 +60,11 @@ class QueryExpression:
     def heading(self):
         """ a dj.Heading object, reflects the effects of the projection operator .proj """
         return self._heading
+
+    @property
+    def original_heading(self):
+        """ a dj.Heading object reflecting the attributes before projection """
+        return self._original_heading or self.heading
 
     @property
     def restriction(self):
@@ -85,11 +90,10 @@ class QueryExpression:
         support = ('(' + src.make_sql() + ') as `_s%x`' % next(
             self._subquery_alias_count) if isinstance(src, QueryExpression) else src for src in self.support)
         clause = next(support)
-        for s, a, left in zip(support, self._join_attributes, self._left):
-            clause += '{left} JOIN {clause}{using}'.format(
+        for s, left in zip(support, self._left):
+            clause += 'NATURAL{left} JOIN {clause}'.format(
                 left=" LEFT" if left else "",
-                clause=s,
-                using="" if not a else " USING (%s)" % ",".join('`%s`' % _ for _ in a))
+                clause=s)
         return clause
 
     def where_clause(self):
@@ -189,7 +193,7 @@ class QueryExpression:
 
     def __and__(self, restriction):
         """
-        Restriction operator
+        Restriction operator e.g. ``q1 & q2``.
         :return: a restricted copy of the input argument
         See QueryExpression.restrict for more detail.
         """
@@ -197,7 +201,7 @@ class QueryExpression:
 
     def __xor__(self, restriction):
         """
-        Restriction operator ignoring compatibility check.
+        Permissive restriction operator ignoring compatibility check  e.g. ``q1 ^ q2``.
         """
         if inspect.isclass(restriction) and issubclass(restriction, QueryExpression):
             restriction = restriction()
@@ -207,22 +211,33 @@ class QueryExpression:
 
     def __sub__(self, restriction):
         """
-        Inverted restriction
+        Inverted restriction e.g. ``q1 - q2``.
         :return: a restricted copy of the input argument
         See QueryExpression.restrict for more detail.
         """
         return self.restrict(Not(restriction))
 
     def __neg__(self):
+        """
+        Convert between restriction and inverted restriction e.g. ``-q1``.
+        :return: target restriction
+        See QueryExpression.restrict for more detail.
+        """
         if isinstance(self, Not):
             return self.restriction
         return Not(self)
 
     def __mul__(self, other):
-        """ join of query expressions `self` and `other` """
+        """
+        join of query expressions `self` and `other` e.g. ``q1 * q2``.
+        """
         return self.join(other)
 
     def __matmul__(self, other):
+        """
+        Permissive join of query expressions `self` and `other` ignoring compatibility check
+            e.g. ``q1 @ q2``.
+        """
         if inspect.isclass(other) and issubclass(other, QueryExpression):
             other = other()  # instantiate
         return self.join(other, semantic_check=False)
@@ -241,41 +256,33 @@ class QueryExpression:
             other = other()  # instantiate
         if not isinstance(other, QueryExpression):
             raise DataJointError("The argument of join must be a QueryExpression")
-        other_clash = set(other.heading.names) | set(
-            (other.heading[n].attribute_expression.strip('`') for n in other.heading.new_attributes))
-        self_clash = set(self.heading.names) | set(
-            (self.heading[n].attribute_expression for n in self.heading.new_attributes))
-        need_subquery1 = isinstance(self, Union) or any(
-            n for n in self.heading.new_attributes if (
-                    n in other_clash or self.heading[n].attribute_expression.strip('`') in other_clash))
-        need_subquery2 = (len(other.support) > 1 or
-                          isinstance(self, Union) or any(
-            n for n in other.heading.new_attributes if (
-                    n in self_clash or other.heading[n].attribute_expression.strip('`') in other_clash)))
-        # Quick fix (TODO)
-        need_subquery1 = True
-        need_subquery2 = True
+        if semantic_check:
+            assert_join_compatibility(self, other)
+        join_attributes = set(n for n in self.heading.names if n in other.heading.names)
+        # needs subquery if FROM class has common attributes with the other's FROM clause
+        need_subquery1 = need_subquery2 = bool(
+            (set(self.original_heading.names) & set(other.original_heading.names))
+            - join_attributes)
+        # need subquery if any of the join attributes are derived
+        need_subquery1 = need_subquery1 or any(n in self.heading.new_attributes for n in join_attributes)
+        need_subquery2 = need_subquery2 or any(n in other.heading.new_attributes for n in join_attributes)
         if need_subquery1:
             self = self.make_subquery()
         if need_subquery2:
             other = other.make_subquery()
-        if semantic_check:
-            assert_join_compatibility(self, other)
         result = QueryExpression()
         result._connection = self.connection
         result._support = self.support + other.support
-        result._join_attributes = (
-                self._join_attributes + [[a for a in self.heading.names if a in other.heading.names]] +
-                other._join_attributes)
         result._left = self._left + [left] + other._left
         result._heading = self.heading.join(other.heading)
         result._restriction = AndList(self.restriction)
         result._restriction.append(other.restriction)
-        assert len(result.support) == len(result._join_attributes) + 1 == len(result._left) + 1
+        result._original_heading = self.original_heading.join(other.original_heading)
+        assert len(result.support) == len(result._left) + 1
         return result
 
     def __add__(self, other):
-        """union"""
+        """union e.g. ``q1 + q2``."""
         return Union.create(self, other)
 
     def proj(self, *attributes, **named_attributes):
@@ -374,6 +381,7 @@ class QueryExpression:
             need_subquery = any(name in self.restriction_attributes for name in self.heading.new_attributes)
 
         result = self.make_subquery() if need_subquery else copy.copy(self)
+        result._original_heading = result.original_heading
         result._heading = result.heading.select(
             attributes, rename_map=dict(**rename_map, **replicate_map), compute_map=compute_map)
         return result
@@ -427,7 +435,7 @@ class QueryExpression:
         return self.fetch(order_by="KEY DESC", limit=limit, **fetch_kwargs)[::-1]
 
     def __len__(self):
-        """ :return: number of elements in the result set """
+        """:return: number of elements in the result set e.g. ``len(q1)``."""
         return self.connection.query(
             'SELECT count(DISTINCT {fields}) FROM {from_}{where}'.format(
                 fields=self.heading.as_sql(self.primary_key, include_aliases=False),
@@ -436,7 +444,8 @@ class QueryExpression:
 
     def __bool__(self):
         """
-        :return: True if the result is not empty. Equivalent to len(self) > 0 but often faster.
+        :return: True if the result is not empty. Equivalent to len(self) > 0 but often
+            faster e.g. ``bool(q1)``.
         """
         return bool(self.connection.query(
             'SELECT EXISTS(SELECT 1 FROM {from_}{where})'.format(
@@ -445,7 +454,8 @@ class QueryExpression:
 
     def __contains__(self, item):
         """
-        returns True if item is found in the .
+        returns True if the restriction in item matches any entries in self
+            e.g. ``restriction in q1``.
         :param item: any restriction
         (item in query_expression) is equivalent to bool(query_expression & item) but may be
         executed more efficiently.
@@ -453,11 +463,24 @@ class QueryExpression:
         return bool(self & item)  # May be optimized e.g. using an EXISTS query
 
     def __iter__(self):
+        """
+        returns an iterator-compatible QueryExpression object e.g. ``iter(q1)``.
+
+        :param self: iterator-compatible QueryExpression object
+        """
         self._iter_only_key = all(v.in_key for v in self.heading.attributes.values())
         self._iter_keys = self.fetch('KEY')
         return self
 
     def __next__(self):
+        """
+        returns the next record on an iterator-compatible QueryExpression object
+            e.g. ``next(q1)``.
+
+        :param self: A query expression
+        :type self: :class:`QueryExpression`
+        :rtype: dict
+        """
         try:
             key = self._iter_keys.pop(0)
         except AttributeError:
@@ -493,6 +516,13 @@ class QueryExpression:
         return self.connection.query(sql, as_dict=as_dict)
 
     def __repr__(self):
+        """
+        returns the string representation of a QueryExpression object e.g. ``str(q1)``.
+
+        :param self: A query expression
+        :type self: :class:`QueryExpression`
+        :rtype: str
+        """
         return super().__repr__() if config['loglevel'].lower() == 'debug' else self.preview()
 
     def preview(self, limit=None, width=None):
@@ -528,7 +558,6 @@ class Aggregation(QueryExpression):
         result._connection = join.connection
         result._heading = join.heading.set_primary_key(arg.primary_key)  # use left operand's primary key
         result._support = join.support
-        result._join_attributes = join._join_attributes
         result._left = join._left
         result._left_restrict = join.restriction  # WHERE clause applied before GROUP BY
         result._grouping_attributes = result.primary_key

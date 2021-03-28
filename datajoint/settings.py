@@ -5,7 +5,6 @@ from contextlib import contextmanager
 import json
 import os
 import pprint
-from collections import OrderedDict
 import logging
 import collections
 from enum import Enum
@@ -35,7 +34,7 @@ role_to_prefix = {
 }
 prefix_to_role = dict(zip(role_to_prefix.values(), role_to_prefix))
 
-default = OrderedDict({
+default = dict({
     'database.host': 'localhost',
     'database.password': None,
     'database.user': None,
@@ -55,7 +54,8 @@ default = OrderedDict({
     'enable_automakers': True,
     'automaker_warnings': True,
     'tmp_folder': None,
-    'backup_context': None
+    'backup_context': None,
+    'delete_permission': None
 })
 
 logger = logging.getLogger(__name__)

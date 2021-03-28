@@ -45,8 +45,9 @@ class Not:
 
 def assert_join_compatibility(expr1, expr2):
     """
-    Determine if expressions expr1 and expr2 are join-compatible.  To be join-compatible, the matching attributes
-    in the two expressions must be in the primary key of one or the other expression.
+    Determine if expressions expr1 and expr2 are join-compatible.  To be join-compatible,
+    the matching attributes in the two expressions must be in the primary key of one or the
+    other expression.
     Raises an exception if not compatible.
     :param expr1: A QueryExpression object
     :param expr2: A QueryExpression object
@@ -58,10 +59,12 @@ def assert_join_compatibility(expr1, expr2):
             raise DataJointError('Object %r is not a QueryExpression and cannot be joined.' % rel)
     if not isinstance(expr1, U) and not isinstance(expr2, U):  # dj.U is always compatible
         try:
-            raise DataJointError("Cannot join query expressions on dependent attribute `%s`" % next(r for r in set(
-                expr1.heading.secondary_attributes).intersection(expr2.heading.secondary_attributes)))
+            raise DataJointError(
+                "Cannot join query expressions on dependent attribute `%s`" % next(
+                    r for r in set(expr1.heading.secondary_attributes).intersection(
+                        expr2.heading.secondary_attributes)))
         except StopIteration:
-            pass
+            pass  # all ok
 
 
 def make_condition(query_expression, condition, columns):
@@ -81,7 +84,8 @@ def make_condition(query_expression, condition, columns):
                 try:
                     v = uuid.UUID(v)
                 except (AttributeError, ValueError):
-                    raise DataJointError('Badly formed UUID {v} in restriction by `{k}`'.format(k=k, v=v)) from None
+                    raise DataJointError(
+                        'Badly formed UUID {v} in restriction by `{k}`'.format(k=k, v=v))
             return "X'%s'" % v.bytes.hex()
         if isinstance(v, (datetime.date, datetime.datetime, datetime.time, decimal.Decimal)):
             return '"%s"' % v
@@ -202,5 +206,5 @@ def extract_column_names(sql_expression):
     s = re.sub(r"(\b[a-z][a-z_0-9]*)\(", "(", s)
     remaining_tokens = set(re.findall(r"\b[a-z][a-z_0-9]*\b", s))
     # update result removing reserved words
-    result.update(remaining_tokens - {"in", "between", "like", "and", "or"})
+    result.update(remaining_tokens - {"is", "in", "between", "like", "and", "or", "null", "not"})
     return result

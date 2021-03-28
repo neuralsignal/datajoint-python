@@ -8,7 +8,7 @@ from nose.tools import assert_equal, assert_false, assert_true, raises, assert_s
 
 import datajoint as dj
 from .schema_simple import A, B, D, E, F, L, DataA, DataB, TTestUpdate, IJ, JI, ReservedWord
-from .schema import Experiment, TTest3, Trial, Ephys
+from .schema import Experiment, TTest3, Trial, Ephys, Child, Parent
 
 
 def setup():
@@ -291,6 +291,15 @@ class TestRelational:
         assert_equal(len(E & q), len(E & df))
 
     @staticmethod
+    def test_restriction_by_null():
+        assert_true(len(Experiment & 'username is null') > 0)
+        assert_true(len(Experiment & 'username is not null') > 0)
+
+    @staticmethod
+    def test_restriction_between():   # see issue
+        assert_true(len(Experiment & 'username between "S" and "Z"') < len(Experiment()))
+
+    @staticmethod
     def test_restrictions_by_lists():
         x = D()
         y = L() & 'cond_in_l'
@@ -440,3 +449,13 @@ class TestRelational:
         rel = ReservedWord()
         rel.insert1({'key': 1, 'in': 'ouch', 'from': 'bummer', 'int': 3, 'select': 'major pain'})
         (rel & 'key=1').fetch('in')  # error because reserved word `key` is not in backquotes. See issue #249
+
+    @staticmethod
+    def test_permissive_join_basic():
+        """Verify join compatibility check is skipped for join"""
+        Child @ Parent
+
+    @staticmethod
+    def test_permissive_restriction_basic():
+        """Verify join compatibility check is skipped for restriction"""
+        Child ^ Parent

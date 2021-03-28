@@ -8,6 +8,7 @@ import pandas
 import logging
 import uuid
 import re
+import warnings
 from pathlib import Path
 from .settings import config
 from .declare import declare, alter
@@ -16,16 +17,27 @@ from .expression import QueryExpression
 from . import blob
 from .utils import user_choice, to_camel_case
 from .heading import Heading
-from .errors import DuplicateError, AccessError, DataJointError, UnknownAttributeError, IntegrityError
+from .errors import (DuplicateError, AccessError, DataJointError, UnknownAttributeError,
+                     IntegrityError)
 from .version import __version__ as version
 
 logger = logging.getLogger(__name__)
 
-foregn_key_error_regexp = re.compile(
+foreign_key_error_regexp = re.compile(
     r"[\w\s:]*\((?P<child>`[^`]+`.`[^`]+`), "
     r"CONSTRAINT (?P<name>`[^`]+`) "
-    r"FOREIGN KEY \((?P<fk_attrs>[^)]+)\) "
-    r"REFERENCES (?P<parent>`[^`]+`(\.`[^`]+`)?) \((?P<pk_attrs>[^)]+)\)")
+    r"(FOREIGN KEY \((?P<fk_attrs>[^)]+)\) "
+    r"REFERENCES (?P<parent>`[^`]+`(\.`[^`]+`)?) \((?P<pk_attrs>[^)]+)\)[\s\w]+\))?")
+
+constraint_info_query = ' '.join("""
+    SELECT
+        COLUMN_NAME as fk_attrs,
+        CONCAT('`', REFERENCED_TABLE_SCHEMA, '`.`', REFERENCED_TABLE_NAME, '`') as parent,
+        REFERENCED_COLUMN_NAME as pk_attrs
+    FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+    WHERE
+        CONSTRAINT_NAME = %s AND TABLE_SCHEMA = %s AND TABLE_NAME = %s;
+    """.split())
 
 
 class _RenameMap(tuple):
@@ -47,7 +59,6 @@ class Table(QueryExpression):
     # These properties must be set by the schema decorator (schemas.py) at class level or by FreeTable at instance level
     database = None
     declaration_context = None
-    _part_tables = None
 
     @property
     def table_name(self):
@@ -144,51 +155,27 @@ class Table(QueryExpression):
         return nodes
 
     @property
-    def part_tables(self):
-        """a tuple of all part tables
-        :return: tuple of part tables of self
-        """
-
-        if self._part_tables is None:
-
-            # TODO general load checking
-            self.connection.dependencies.load()
-
-            part_tables = []
-            self_table_name = self.full_table_name.replace('`', '')
-
-            for child_table_name in self.children():
-
-                child_table_name = child_table_name.replace('`', '')
-
-                if child_table_name.startswith(self_table_name + '__'):
-
-                    part_table_name = child_table_name.replace(
-                        self_table_name + '__', ''
-                    )
-
-                    try:
-                        part_table = getattr(
-                            self,
-                            to_camel_case(part_table_name)
-                        )
-                    except AttributeError:
-                        part_table = FreeTable(
-                            self.connection, child_table_name
-                        )
-
-                    part_tables.append(part_table)
-
-            self._part_tables = tuple(part_tables)
-
-        return self._part_tables
+    def has_parts(self):
+        """True if self has part tables."""
+        return bool(self.parts())
 
     @property
-    def has_part_tables(self):
-        """True if self has part tables.
-        """
+    def has_children(self):
+        """True if self has children."""
+        return bool(self.children())
 
-        return bool(self.part_tables)
+    @property
+    def has_parents(self):
+        """True if self has parents."""
+        return bool(self.parents())
+
+    @property
+    def with_parts(self):
+        """Joined master with part tables. Requires that no dependent attributes match."""
+        table = self
+        for part_table in self.parts(as_objects=True):
+            table = table * part_table
+        return table
 
     def children(self, primary=None, as_objects=False, foreign_key_info=False):
         """
@@ -230,6 +217,7 @@ class Table(QueryExpression):
         return part tables either as entries in a dict with foreign key informaiton or a list of objects
         :param as_objects: if False (default), the output is a dict describing the foreign keys. If True, return table objects.
         """
+        self.connection.dependencies.load(force=False)
         nodes = [node for node in self.connection.dependencies.nodes
                  if not node.isdigit() and node.startswith(self.full_table_name[:-1] + '__')]
         return [FreeTable(self.connection, c) for c in nodes] if as_objects else nodes
@@ -287,7 +275,7 @@ class Table(QueryExpression):
             # convert master input to dictionary
             new_row = new_row.iloc[0].dropna().to_dict()
 
-            for part_table in self.part_tables:
+            for part_table in self.parts(as_objects=True):
                 part_columns = set(part_table.heading) & set(row)
                 if not part_columns:
                     new_row[part_table.name] = None
@@ -312,11 +300,15 @@ class Table(QueryExpression):
             # insert into self
             self.insert1(master_input, **kwargs)
 
+            # other indices
+            other = set(row.index) - index
+            part_table_names = []
+            parts = self.parts(as_objects=True)
             # insert into part tables
-            for part_table in self.part_tables:
+            for part_table in parts:
                 # if part_table exists insert otherwise skip part_table
                 part_table_name = (
-                    to_camel_case(part_table.table_name)
+                    to_camel_case(part_table.table_name.split('__')[-1])
                     if not hasattr(part_table, 'name')
                     else part_table.name
                 )
@@ -328,6 +320,17 @@ class Table(QueryExpression):
                             )
                         )
                     continue
+                part_table_names.append(part_table_name)
+
+            # assert subset
+            if not other.issubset(set(part_table_names)):
+                raise DataJointError(
+                    "Some keys could not be assigned for `inset1p`: "
+                    "{0}.".format(other)
+                )
+
+            # insert into part tables
+            for part_table_name, part_table in zip(part_table_names, parts):
                 # try to convert to pandas Dataframe
                 part_rows = row[part_table_name]
                 if part_rows is None:
@@ -476,11 +479,14 @@ class Table(QueryExpression):
                     duplicate=(' ON DUPLICATE KEY UPDATE `{pk}`=`{pk}`'.format(pk=self.primary_key[0])
                                if skip_duplicates else ''))
                 self.connection.query(query, args=list(
-                    itertools.chain.from_iterable((v for v in r['values'] if v is not None) for r in rows)))
+                    itertools.chain.from_iterable(
+                        (v for v in r['values'] if v is not None) for r in rows)))
             except UnknownAttributeError as err:
-                raise err.suggest('To ignore extra fields in insert, set ignore_extra_fields=True')
+                raise err.suggest(
+                    'To ignore extra fields in insert, set ignore_extra_fields=True')
             except DuplicateError as err:
-                raise err.suggest('To ignore duplicate entries in insert, set skip_duplicates=True')
+                raise err.suggest(
+                    'To ignore duplicate entries in insert, set skip_duplicates=True')
 
     def delete_quick(self, get_count=False):
         """
@@ -546,23 +552,31 @@ class Table(QueryExpression):
             try:
                 delete_count += self.delete_quick(get_count=True)
             except IntegrityError as error:
-                match = foregn_key_error_regexp.match(error.args[0])
-                assert match is not None, "foreign key parsing error"
+                match = foreign_key_error_regexp.match(error.args[0]).groupdict()
+                if "`.`" not in match['child']:  # if schema name missing, use self
+                    match['child'] = '{}.{}'.format(self.full_table_name.split(".")[0],
+                                                    match['child'])
+                if match['pk_attrs'] is not None:  # fully matched, adjusting the keys
+                    match['fk_attrs'] = [k.strip('`') for k in match['fk_attrs'].split(',')]
+                    match['pk_attrs'] = [k.strip('`') for k in match['pk_attrs'].split(',')]
+                else:  # only partially matched, querying with constraint to determine keys
+                    match['fk_attrs'], match['parent'], match['pk_attrs'] = list(map(
+                        list, zip(*self.connection.query(constraint_info_query, args=(
+                            match['name'].strip('`'),
+                            *[_.strip('`') for _ in match['child'].split('`.`')]
+                            )).fetchall())))
+                    match['parent'] = match['parent'][0]
                 # restrict child by self if
                 # 1. if self's restriction attributes are not in child's primary key
                 # 2. if child renames any attributes
                 # otherwise restrict child by self's restriction.
-                child = match.group('child')
-                if "`.`" not in child:  # if schema name is not included, take it from self
-                    child = self.full_table_name.split("`.")[0] + child
-                child = FreeTable(self.connection, child)
+                child = FreeTable(self.connection, match['child'])
                 if set(self.restriction_attributes) <= set(child.primary_key) and \
-                        match.group('fk_attrs') == match.group('pk_attrs'):
+                        match['fk_attrs'] == match['pk_attrs']:
                     child._restriction = self._restriction
-                elif match.group('fk_attrs') != match.group('pk_attrs'):
-                    fk_attrs = [k.strip('`') for k in match.group('fk_attrs').split(',')]
-                    pk_attrs = [k.strip('`') for k in match.group('pk_attrs').split(',')]
-                    child &= self.proj(**dict(zip(fk_attrs, pk_attrs)))
+                elif match['fk_attrs'] != match['pk_attrs']:
+                    child &= self.proj(**dict(zip(match['fk_attrs'],
+                                                  match['pk_attrs'])))
                 else:
                     child &= self.proj()
                 delete_count += child._delete_cascade()
@@ -577,10 +591,19 @@ class Table(QueryExpression):
     def delete(self, transaction=True, safemode=None):
         """
         Deletes the contents of the table and its dependent tables, recursively.
+
         :param transaction: if True, use the entire delete becomes an atomic transaction.
-        :param safemode: If True, prohibit nested transactions and prompt to confirm. Default is dj.config['safemode'].
+        :param safemode: If True, prohibit nested transactions and prompt to confirm. Default
+            is dj.config['safemode'].
         """
-        safemode = safemode or config['safemode']
+        safemode = config['safemode'] if safemode is None else safemode
+
+        if config.get('delete_permission', None) is not None:
+            delete_permission = config['delete_permission'](self)
+            if not delete_permission:
+                raise DataJointError(
+                    "Cannot delete due to permission restrictions on entries."
+                )
 
         # Start transaction
         if transaction:
@@ -610,11 +633,13 @@ class Table(QueryExpression):
                 self.connection.cancel_transaction()
         else:
             if not safemode or user_choice("Commit deletes?", default='no') == 'yes':
-                self.connection.commit_transaction()
+                if transaction:
+                    self.connection.commit_transaction()
                 if safemode:
                     print('Deletes committed.')
             else:
-                self.connection.cancel_transaction()
+                if transaction:
+                    self.connection.cancel_transaction()
                 if safemode:
                     print('Deletes cancelled')
 
@@ -747,6 +772,9 @@ class Table(QueryExpression):
             >>> (v2p.Mice() & key)._update('mouse_dob', '2011-01-01')
             >>> (v2p.Mice() & key)._update( 'lens')   # set the value to NULL
         """
+        warnings.warn(
+            '`_update` is a deprecated function to be removed in datajoint 0.14. '
+            'Use `.update1` instead.')
         if len(self) != 1:
             raise DataJointError('Update is only allowed on one tuple at a time')
         if attrname not in self.heading:
@@ -763,10 +791,13 @@ class Table(QueryExpression):
             where_clause=self.where_clause())
         self.connection.query(command, args=(value, ) if value is not None else ())
 
-    def _check_downstream_autopopulated(self, reload=True, error='raise'):
+    def _check_downstream_autopopulated(self, key=None, reload=True, error='raise'):
         """
             Check if downstream autopopulated tables include entry.
         """
+
+        if key is not None:
+            self = self & key
 
         if reload or not self.connection.dependencies:
             self.connection.dependencies.load()
@@ -810,18 +841,7 @@ class Table(QueryExpression):
 
         return True
 
-    def save_update(self, attrname, value=None, reload=True, error='raise'):
-        """
-            Updates a field in an existing tuple, but only if no descendant
-            tables are autopopulated tables with that entry.
-        """
-
-        truth = self._check_downstream_autopopulated(reload, error)
-
-        if truth:
-            self._update(attrname, value)
-
-    def save_updates(self, updates, reload=True, error='raise'):
+    def save_update1(self, row, reload=True, error='raise'):
         """
             Updates multiple fields in an existing tuple, but only if no
             descendant tables are autopopulated tables with that entry.
@@ -832,42 +852,23 @@ class Table(QueryExpression):
 
         """
 
-        if len(self) != 1:
-            raise DataJointError('Update is only allowed on one tuple at a time')
-        if set(updates) & set(self.primary_key):
-            raise DataJointError('Cannot update a key value.')
-        if set(updates) - set(self.heading):
-            raise DataJointError('Invalid attribute names.')
+        # argument validations
+        if not isinstance(row, collections.abc.Mapping):
+            raise DataJointError('The argument of update1 must be dict-like.')
+        if not set(row).issuperset(self.primary_key):
+            raise DataJointError('The argument of save_update1 must supply all primary key values.')
 
-        truth = self._check_downstream_autopopulated(reload, error)
+        key = {k: v for k, v in row.items() if k in self.primary_key}
+
+        if len(self & key) != 1:
+            raise DataJointError('Update is only allowed on one entry at a time')
+
+        truth = self._check_downstream_autopopulated(key, reload, error)
 
         if not truth:
             return
 
-        # TODO simplify
-        row_to_insert = self.__make_row_to_insert(updates, [], False)
-
-        if not row_to_insert:
-            return
-
-        set_statement = [
-            "`{0}`={1}".format(name, placeholder)
-            for name, placeholder
-            in zip(row_to_insert['names'], row_to_insert['placeholders'])
-        ]
-        set_statement = ', '.join(set_statement)
-
-        command = "UPDATE {full_table_name} SET {set_statement} {where_clause}".format(
-            full_table_name=self.from_clause(),
-            set_statement=set_statement,
-            where_clause=self.where_clause())
-        self.connection.query(
-            command,
-            args=[
-                value
-                for value in row_to_insert['values'] if value is not None
-            ]
-        )
+        return self.update1(row)
 
     # --- private helper functions ----
     def __make_placeholder(self, name, value, ignore_extra_fields=False):

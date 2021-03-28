@@ -5,17 +5,13 @@ import re
 import pandas
 import collections
 import warnings
-import sys
 import numpy as np
 
 from .autopopulate import AutoPopulate
 from .expression import AndList
 from .utils import ClassProperty
 from .errors import DataJointError
-from .settings_table import Settingstable
-
-if sys.version_info[1] < 6:
-    dict = collections.OrderedDict
+from .settings_table import get_settings_table
 
 Sequence = (collections.MutableSequence, tuple, set)
 
@@ -26,6 +22,8 @@ class AutoMake(AutoPopulate):
     It adds a settings table upstream and make method.
     """
 
+    _settings_table_name = None
+    _settings_schema = None
     _settings_table = None
     _settings = None
     _verbose = False
@@ -155,14 +153,14 @@ class AutoMake(AutoPopulate):
             output = pandas.DataFrame(output)
 
         if (
-            self.has_part_tables
+            self.has_parts
             and not isinstance(output, (pandas.DataFrame, dict))
         ):
             raise DataJointError(
                 "output must be dataframe or dict for table with part tables."
             )
 
-        elif not self.has_part_tables and not isinstance(output, dict):
+        elif not self.has_parts and not isinstance(output, dict):
             raise DataJointError(
                 "ouput must be dict for table without part tables."
             )
@@ -181,7 +179,7 @@ class AutoMake(AutoPopulate):
                 output[column] = entry[column][0]
 
         # insert into table and part_table
-        if self.has_part_tables:
+        if self.has_parts:
             self.insert1p(output, raise_part_missing=False)
         else:
             self.insert1(output)
@@ -233,27 +231,11 @@ class AutoMake(AutoPopulate):
 
         if cls._settings_table is None:
             # dynamically assign settings table
-
-            settings_table_name = cls.name + 'Settings'
-            child_table = cls
-
-            class Settings(Settingstable):
-
-                @property
-                def definition(self):
-                    return super().definition.format(
-                        table_name=cls.table_name.strip('_#')
-                    )
-
-                @ClassProperty
-                def name(cls):
-                    return settings_table_name
-
-                @ClassProperty
-                def child_table(cls):
-                    return child_table
-
-            cls._settings_table = Settings
+            cls._settings_table = get_settings_table(
+                cls,
+                name=cls._settings_table_name,
+                assigned_schema=cls._settings_schema
+            )
 
         return cls._settings_table
 
@@ -262,7 +244,7 @@ class AutoMake(AutoPopulate):
         """add settings table attribute if not in definition
         """
 
-        settings_table_attribute = '-> {}'.format(cls.settings_table.name)
+        settings_table_attribute = '-> {}'.format(cls.settings_table._save_name)
 
         if isinstance(cls.definition, property):
             pass
