@@ -791,10 +791,13 @@ class Table(QueryExpression):
             where_clause=self.where_clause())
         self.connection.query(command, args=(value, ) if value is not None else ())
 
-    def _check_downstream_autopopulated(self, reload=True, error='raise'):
+    def _check_downstream_autopopulated(self, key=None, reload=True, error='raise'):
         """
             Check if downstream autopopulated tables include entry.
         """
+
+        if key is not None:
+            self = self & key
 
         if reload or not self.connection.dependencies:
             self.connection.dependencies.load()
@@ -838,18 +841,7 @@ class Table(QueryExpression):
 
         return True
 
-    def save_update(self, attrname, value=None, reload=True, error='raise'):
-        """
-            Updates a field in an existing tuple, but only if no descendant
-            tables are autopopulated tables with that entry.
-        """
-
-        truth = self._check_downstream_autopopulated(reload, error)
-
-        if truth:
-            self._update(attrname, value)
-
-    def save_updates(self, updates, reload=True, error='raise'):
+    def save_update1(self, row, reload=True, error='raise'):
         """
             Updates multiple fields in an existing tuple, but only if no
             descendant tables are autopopulated tables with that entry.
@@ -860,42 +852,23 @@ class Table(QueryExpression):
 
         """
 
-        if len(self) != 1:
-            raise DataJointError('Update is only allowed on one tuple at a time')
-        if set(updates) & set(self.primary_key):
-            raise DataJointError('Cannot update a key value.')
-        if set(updates) - set(self.heading):
-            raise DataJointError('Invalid attribute names.')
+        # argument validations
+        if not isinstance(row, collections.abc.Mapping):
+            raise DataJointError('The argument of update1 must be dict-like.')
+        if not set(row).issuperset(self.primary_key):
+            raise DataJointError('The argument of save_update1 must supply all primary key values.')
 
-        truth = self._check_downstream_autopopulated(reload, error)
+        key = {k: v for k, v in row.items() if k in self.primary_key}
+
+        if len(self & key) != 1:
+            raise DataJointError('Update is only allowed on one entry at a time')
+
+        truth = self._check_downstream_autopopulated(key, reload, error)
 
         if not truth:
             return
 
-        # TODO simplify
-        row_to_insert = self.__make_row_to_insert(updates, [], False)
-
-        if not row_to_insert:
-            return
-
-        set_statement = [
-            "`{0}`={1}".format(name, placeholder)
-            for name, placeholder
-            in zip(row_to_insert['names'], row_to_insert['placeholders'])
-        ]
-        set_statement = ', '.join(set_statement)
-
-        command = "UPDATE {full_table_name} SET {set_statement} {where_clause}".format(
-            full_table_name=self.from_clause(),
-            set_statement=set_statement,
-            where_clause=self.where_clause())
-        self.connection.query(
-            command,
-            args=[
-                value
-                for value in row_to_insert['values'] if value is not None
-            ]
-        )
+        return self.update1(row)
 
     # --- private helper functions ----
     def __make_placeholder(self, name, value, ignore_extra_fields=False):
