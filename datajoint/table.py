@@ -8,6 +8,7 @@ import pandas
 import logging
 import uuid
 import re
+import warnings
 from pathlib import Path
 from .settings import config
 from .declare import declare, alter
@@ -771,6 +772,9 @@ class Table(QueryExpression):
             >>> (v2p.Mice() & key)._update('mouse_dob', '2011-01-01')
             >>> (v2p.Mice() & key)._update( 'lens')   # set the value to NULL
         """
+        warnings.warn(
+            '`_update` is a deprecated function to be removed in datajoint 0.14. '
+            'Use `.update1` instead.')
         if len(self) != 1:
             raise DataJointError('Update is only allowed on one tuple at a time')
         if attrname not in self.heading:
