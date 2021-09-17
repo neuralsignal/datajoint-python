@@ -261,6 +261,14 @@ class Table(QueryExpression):
         :param row: a pandas Series or dict-like object
         """
 
+        def _table_name(table):
+            return (
+                to_camel_case(table.table_name.split('__')[-1])
+                if not hasattr(table, 'name')
+                else table.name
+            )
+
+
         if isinstance(row, pandas.DataFrame):
             # assumes all data in one dataframe
             columns = set(self.heading) & set(row)
@@ -278,14 +286,14 @@ class Table(QueryExpression):
             for part_table in self.parts(as_objects=True):
                 part_columns = set(part_table.heading) & set(row)
                 if not part_columns:
-                    new_row[part_table.name] = None
+                    new_row[_table_name(part_table)] = None
                 else:
                     # select correct columns and drop duplicates
                     # TODO handling renaming
                     part_rows = row[list(part_columns)].drop_duplicates(
                         part_table.primary_key
                     )
-                    new_row[part_table.name] = part_rows
+                    new_row[_table_name(part_table)] = part_rows
             # reassign row
             row = new_row
 
@@ -307,11 +315,7 @@ class Table(QueryExpression):
             # insert into part tables
             for part_table in parts:
                 # if part_table exists insert otherwise skip part_table
-                part_table_name = (
-                    to_camel_case(part_table.table_name.split('__')[-1])
-                    if not hasattr(part_table, 'name')
-                    else part_table.name
-                )
+                part_table_name = _table_name(part_table)
                 if part_table_name not in row.index:
                     if raise_part_missing:
                         raise DataJointError(
