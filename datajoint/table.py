@@ -885,7 +885,7 @@ class Table(QueryExpression):
         attr = self.heading[name]
         if attr.adapter:
             value = attr.adapter.put(value)
-        if value is None or (attr.numeric and (value == '' or np.isnan(np.float(value)))):
+        if value is None or (attr.numeric and (value == '' or np.isnan(float(value)))):
             # set default value
             placeholder, value = 'DEFAULT', None
         else:  # not NULL
