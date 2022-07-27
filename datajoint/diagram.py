@@ -6,7 +6,8 @@ import logging
 import inspect
 from .table import Table
 from .dependencies import unite_master_parts
-from .user_tables import Manual, Imported, Computed, Lookup, Part
+from .user_tables import Manual, Imported, Computed, Lookup
+from .part_table import Part
 from .auto_tables import AutoComputed, AutoImported
 from .settings_table import Settingstable
 from .errors import DataJointError

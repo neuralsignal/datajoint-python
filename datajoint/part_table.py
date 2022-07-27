@@ -21,7 +21,7 @@ class Part(UserTable):
 
     tier_regexp = (
         r"(?P<master>"
-        + "|".join([c.tier_regexp for c in (Manual, Lookup, Imported, Computed)])
+        + "|".join([c.tier_regexp for c in (Manual, Lookup, Imported, Computed, AutoComputed, AutoImported)])
         + r"){1,1}"
         + "__"
         + r"(?P<part>"
