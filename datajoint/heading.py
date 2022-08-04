@@ -320,24 +320,21 @@ class Heading:
             special = re.match(r":(?P<type>[^:]+):(?P<comment>.*)", attr["comment"])
             if special:
                 special = special.groupdict()
+                true_type = attr["type"]
                 attr.update(special)
             # process adapted attribute types
             if special and TYPE_PATTERN["ADAPTED"].match(attr["type"]):
                 adapter_name = special["type"]
-                # keeping track of attribute type used in adapter
-                true_type = re.match(r"(?P<comment>.*);(?P<type>[^:]+);", attr["comment"])
-                true_type = true_type.groupdict()
-                attr["comment"] = true_type["comment"]
                 # if adapter in context use it, if not create artificial adapter
                 try:
-                    if context is None and config['backup_context'] is None:
-                        raise DataJointError('Declaration context is not set')
+                    if context is None and config["backup_context"] is None:
+                        raise DataJointError("Declaration context is not set")
                     attr.update(adapter=get_adapter(context, adapter_name))
                 except DataJointError:
                     # if no adapter, then delay the error until the first invocation
                     # but keep at least sql type
                     class AttrA(AttributeAdapter):
-                        attribute_type = true_type['type']
+                        attribute_type = true_type
                     attr.update(adapter=AttrA())
                 else:
                     attr.update(type=attr["adapter"].attribute_type)
