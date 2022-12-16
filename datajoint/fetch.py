@@ -178,7 +178,7 @@ class Fetch:
         unpacks blob attributes.
 
         :param attrs: zero or more attributes to fetch. If not provided, the call will return all attributes of this
-                        relation. If provided, returns tuples with an entry for each attribute.
+                        table. If provided, returns tuples with an entry for each attribute.
         :param offset: the number of tuples to skip in the returned result
         :param limit: the maximum number of tuples to return
         :param order_by: a single attribute or the list of attributes to order the results. No ordering should be assumed
@@ -190,8 +190,6 @@ class Fetch:
                         True for .fetch('KEY')
         :param squeeze:  if True, remove extra dimensions from arrays
         :param download_path: for fetches that download data, e.g. attachments
-        :param apply_adapter: whether to apply the adapter
-        :param get_external: whether to return the external blob or attachment or only the uuid
         :return: the contents of the relation in the form of a structured numpy.array or a dict list
         """
         if order_by is not None:
@@ -348,8 +346,6 @@ class Fetch1:
                  If attrs is empty, the return result is a dict
         :param squeeze:  When true, remove extra dimensions from arrays in attributes
         :param download_path: for fetches that download data, e.g. attachments
-        :param apply_adapter: whether to apply the adapter
-        :param get_external: whether to return the external blob or attachment or only the uuid
         :return: the one tuple in the relation in the form of a dict
         """
         heading = self._expression.heading
