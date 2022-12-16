@@ -7,13 +7,12 @@ from .user_tables import UserTable, Manual, Lookup, Imported, Computed, \
     _base_regexp
 from .auto_tables import AutoComputed, AutoImported
 
-
 class Part(UserTable):
     """
-    Inherit from this class if the table's values are details of an entry in another relation
-    and if this table is populated by this relation. For example, the entries inheriting from
+    Inherit from this class if the table's values are details of an entry in another table
+    and if this table is populated by the other table. For example, the entries inheriting from
     dj.Part could be single entries of a matrix, while the parent table refers to the entire matrix.
-    Part relations are implemented as classes inside classes.
+    Part tables are implemented as classes inside classes.
     """
 
     _connection = None
