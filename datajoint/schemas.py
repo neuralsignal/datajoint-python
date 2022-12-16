@@ -50,7 +50,7 @@ class Schema:
         connection=None,
         create_schema=True,
         create_tables=True,
-        add_objects=None
+        add_objects=None,
     ):
         """
         Associate database schema `schema_name`. If the schema does not exist, attempt to
@@ -90,7 +90,7 @@ class Schema:
         connection=None,
         create_schema=None,
         create_tables=None,
-        add_objects=None
+        add_objects=None,
     ):
         """
         Associate database schema `schema_name`. If the schema does not exist, attempt to
@@ -179,7 +179,7 @@ class Schema:
 
         if issubclass(cls, Part):
             raise DataJointError(
-                "The schema decorator should not be applied to Part relations"
+                "The schema decorator should not be applied to Part tables."
             )
         # automaker specific
         is_automaker = issubclass(
@@ -256,9 +256,7 @@ class Schema:
         # instantiate the class, declare the table if not already
         instance = table_class()
         is_declared = instance.is_declared
-        if not is_declared:
-            if not self.create_tables or assert_declared:
-                raise DataJointError("Table `%s` not declared" % instance.table_name)
+        if not is_declared and not assert_declared and self.create_tables:
             instance.declare(context)
             self.connection.dependencies.clear()
         is_declared = is_declared or instance.is_declared
@@ -318,7 +316,7 @@ class Schema:
 
     def spawn_missing_classes(self, context=None):
         """
-        Creates the appropriate python user relation classes from tables in the schema and places them
+        Creates the appropriate python user table classes from tables in the schema and places them
         in the context.
 
         :param context: alternative context to place the missing classes into, e.g. locals()
@@ -358,7 +356,7 @@ class Schema:
                     if re.fullmatch(Part.tier_regexp, table_name):
                         part_tables.append(table_name)
                 else:
-                    # declare and decorate master relation classes
+                    # declare and decorate master table classes
                     context[class_name] = self(
                         type(class_name, (cls,), dict()), context=context
                     )
@@ -543,7 +541,7 @@ class VirtualModule(types.ModuleType):
         create_schema=False,
         create_tables=False,
         connection=None,
-        add_objects=None
+        add_objects=None,
     ):
         """
         Creates a python module with the given name from the name of a schema on the server and

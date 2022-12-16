@@ -84,7 +84,7 @@ else:
 
         >>>  diag = Diagram(source)
 
-        source can be a base relation object, a base relation class, a schema, or a module that has a schema.
+        source can be a base table object, a base table class, a schema, or a module that has a schema.
 
         >>> diag.draw()
 
